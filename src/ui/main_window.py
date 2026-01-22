@@ -9,6 +9,7 @@ from src.core.telemetry_session import TelemetrySession
 from src.ui.track_map import TrackMapWidget
 from src.ui.graphs import GraphsWidget, GraphsOverlayWidget
 from src.ui.telemetry_table import TelemetryTableWidget
+from src.ui.corner_table import CornerTableWidget
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -21,23 +22,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("GT7 Race Engineer")
         self.resize(980, 720)
 
-        # Enable dock behavior: tabbed docks, nested docks, animations.
+        # Dock behavior: tabbed docks, nested docks, animations
         self.setDockOptions(
             QtWidgets.QMainWindow.DockOption.AllowTabbedDocks
             | QtWidgets.QMainWindow.DockOption.AllowNestedDocks
             | QtWidgets.QMainWindow.DockOption.AnimatedDocks
         )
 
-        # Central Tabs (keep lightweight "pages" here)
+        # Central Tabs
         self.tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self.tabs)
 
-        # Overview tab (existing UI)
+        # Overview tab
         self.overview = QtWidgets.QWidget()
         self.tabs.addTab(self.overview, "Overview")
         self._build_overview_ui(self.overview)
 
-        # Telemetry table stays as a normal tab (it benefits from full-page space)
+        # Telemetry table stays as a normal tab
         self.telemetry_table = TelemetryTableWidget()
         self.tabs.addTab(self.telemetry_table, "Telemetry (All Fields)")
 
@@ -45,32 +46,35 @@ class MainWindow(QtWidgets.QMainWindow):
         self.track_map = TrackMapWidget()
         self.graphs = GraphsWidget()
         self.graphs_overlay = GraphsOverlayWidget()
+        self.corner_table = CornerTableWidget()
 
+        # IMPORTANT: standardize dock attribute names
         self.dock_track = self._make_dock("Track Map", self.track_map)
         self.dock_graphs = self._make_dock("Graphs", self.graphs)
         self.dock_graphs_overlay = self._make_dock("Graphs (Overlay)", self.graphs_overlay)
+        self.dock_corners = self._make_dock("Corners", self.corner_table)
 
-        # Default layout:
-        # - Track Map on the right
-        # - Graphs tabified with Track Map
-        # - Graphs (Overlay) tabified as well (same dock area)
+        # Add docks to the right area
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_track)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs_overlay)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_corners)
 
-        # Tabify (creates a single dock area with tabs)
+        # Tabify into one dock stack
         self.tabifyDockWidget(self.dock_track, self.dock_graphs)
         self.tabifyDockWidget(self.dock_track, self.dock_graphs_overlay)
+        self.tabifyDockWidget(self.dock_track, self.dock_corners)
         self.dock_track.raise_()
 
-        # Optional: give the central tabs more room by starting docks narrower
-        # (user can resize/undock as they like)
+        # Optional: size right docks reasonably
         try:
-            self.resizeDocks([self.dock_track], [360], QtCore.Qt.Horizontal)
+            self.resizeDocks([self.dock_track], [380], QtCore.Qt.Horizontal)
         except Exception:
             pass
 
+        # ----------------------------
         # Theme preference + menu
+        # ----------------------------
         self._settings = QtCore.QSettings("GT7RaceEngineer", "GT7RaceEngineerApp")
         theme_default = self._settings.value("ui/theme", "studio_gray", type=str)
 
@@ -93,7 +97,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.act_theme_gray = add_theme_action("Studio Gray", "studio_gray")
         self.act_theme_dark = add_theme_action("Dark (Near-black)", "dark")
 
-        # Check saved theme
         matched = False
         for act in self._theme_group.actions():
             if str(act.data()) == str(theme_default):
@@ -105,8 +108,6 @@ class MainWindow(QtWidgets.QMainWindow):
             theme_default = "studio_gray"
 
         self._theme_group.triggered.connect(self._on_theme_selected)
-
-        # Apply immediately
         self._apply_theme(str(theme_default))
 
     def _make_dock(self, title: str, widget: QtWidgets.QWidget) -> QtWidgets.QDockWidget:
@@ -204,22 +205,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.val_throttle.setText(f"{state.throttle:.0f}")
         self.val_brake.setText(f"{state.brake:.0f}")
 
-        if state.fuel_capacity > 0:
+        if getattr(state, "fuel_capacity", 0) and state.fuel_capacity > 0:
             self.val_fuel.setText(f"{state.fuel:.1f} ({state.fuel_pct:.0f}%)")
         else:
             self.val_fuel.setText(f"{state.fuel:.1f}")
 
-        self.val_last.setText(state.last_lap_str)
-        self.val_best.setText(state.best_lap_str)
+        self.val_last.setText(getattr(state, "last_lap_str", "--:--.---"))
+        self.val_best.setText(getattr(state, "best_lap_str", "--:--.---"))
 
     def update_visualizations(self, session: TelemetrySession, snap: dict) -> None:
-        """
-        Called by AppController every tick. Keeps the heavy visual work out of update_state().
-        Docked widgets are still normal widgets, so updates remain the same.
-        """
         self.track_map.update_from_session(session)
         self.graphs.update_from_session(session)
         self.graphs_overlay.update_from_session(session)
+        self.corner_table.update_from_session(session)
         self.telemetry_table.update_from_snapshot(session.latest_snapshot())
 
     def append_event(self, ev) -> None:
@@ -248,7 +246,6 @@ class MainWindow(QtWidgets.QMainWindow):
         theme = (theme or "studio_gray").strip().lower()
 
         if theme == "light":
-            # True light: white surfaces, dark text
             p.setColor(QtGui.QPalette.Window, QtGui.QColor(245, 245, 245))
             p.setColor(QtGui.QPalette.WindowText, QtGui.QColor(15, 15, 15))
             p.setColor(QtGui.QPalette.Base, QtGui.QColor(255, 255, 255))
@@ -263,16 +260,11 @@ class MainWindow(QtWidgets.QMainWindow):
             p.setColor(QtGui.QPalette.Link, QtGui.QColor(0, 102, 204))
 
             app.setPalette(p)
-
             pg.setConfigOption("background", "w")
             pg.setConfigOption("foreground", "k")
-
-            app.setStyleSheet(
-                "QToolTip { color: #111; background-color: #fff; border: 1px solid #888; }"
-            )
+            app.setStyleSheet("QToolTip { color: #111; background-color: #fff; border: 1px solid #888; }")
 
         elif theme == "dark":
-            # Near-black dark
             p.setColor(QtGui.QPalette.Window, QtGui.QColor(18, 18, 18))
             p.setColor(QtGui.QPalette.WindowText, QtGui.QColor(220, 220, 220))
             p.setColor(QtGui.QPalette.Base, QtGui.QColor(25, 25, 25))
@@ -288,13 +280,9 @@ class MainWindow(QtWidgets.QMainWindow):
             p.setColor(QtGui.QPalette.Link, QtGui.QColor(80, 170, 255))
 
             app.setPalette(p)
-
             pg.setConfigOption("background", (18, 18, 18))
             pg.setConfigOption("foreground", (220, 220, 220))
-
-            app.setStyleSheet(
-                "QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }"
-            )
+            app.setStyleSheet("QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }")
 
         else:
             # Studio Gray (your preferred look)
@@ -313,10 +301,6 @@ class MainWindow(QtWidgets.QMainWindow):
             p.setColor(QtGui.QPalette.Link, QtGui.QColor(80, 170, 255))
 
             app.setPalette(p)
-
             pg.setConfigOption("background", (35, 35, 35))
             pg.setConfigOption("foreground", (230, 230, 230))
-
-            app.setStyleSheet(
-                "QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }"
-            )
+            app.setStyleSheet("QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }")

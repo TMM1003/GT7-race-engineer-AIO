@@ -32,9 +32,17 @@ class LapData:
     lap_num: int
     samples: List[TelemetrySample]           # raw samples (10 Hz in your current architecture)
     points_xz: List[Tuple[float, float]]     # extracted (x,z)
-    cum_dist_m: List[float]                  # cumulative distance along points (meters, if GT7 units are meters)
+    cum_dist_m: List[float]                  # cumulative distance along points
     lap_time_ms: int                         # from snapshot last_lap_ms at lap change, if available
     start_gate: Optional[Tuple[Tuple[float, float], Tuple[float, float]]]  # ((x1,z1),(x2,z2)) line segment
+
+
+@dataclass
+class CornerSegment:
+    start_idx: int          # index into resampled arrays (0..n-1)
+    end_idx: int            # inclusive
+    direction: int          # -1 left, +1 right, 0 unknown
+    strength: float         # avg curvature metric in the segment
 
 
 def _dist2d(a: Tuple[float, float], b: Tuple[float, float]) -> float:
@@ -76,8 +84,7 @@ def _make_start_gate(points: List[Tuple[float, float]]) -> Optional[Tuple[Tuple[
     nx, nz = (-vz, vx)
 
     # gate half-length: arbitrary but stable; based on early spread
-    # If this is too short/long, we can adapt later.
-    half = 20.0  # "meters" scale-ish; good first pass
+    half = 20.0
 
     a = (p0[0] - nx * half, p0[1] - nz * half)
     b = (p0[0] + nx * half, p0[1] + nz * half)
@@ -154,6 +161,31 @@ def _resample_series_by_distance(
     return out
 
 
+def _wrap_pi(a: float) -> float:
+    """Wrap angle to [-pi, pi]."""
+    while a > math.pi:
+        a -= 2 * math.pi
+    while a < -math.pi:
+        a += 2 * math.pi
+    return a
+
+
+def _moving_average(xs: List[float], w: int) -> List[float]:
+    if not xs or w <= 1:
+        return xs
+    w = min(w, len(xs))
+    out = [0.0] * len(xs)
+    s = 0.0
+    q = deque()
+    for i, v in enumerate(xs):
+        q.append(v)
+        s += v
+        if len(q) > w:
+            s -= q.popleft()
+        out[i] = s / len(q)
+    return out
+
+
 class TelemetrySession:
     """
     Rolling history + per-lap storage + derived lap distance axis.
@@ -181,7 +213,7 @@ class TelemetrySession:
         self._last_pos: Optional[Tuple[float, float]] = None
         self._last_moving_t: Optional[float] = None
 
-    #public API
+    # public API
     def latest_snapshot(self) -> Dict[str, Any]:
         return self._last_snapshot
 
@@ -224,12 +256,9 @@ class TelemetrySession:
         pts = lap.points_xz
         if len(pts) < 2:
             return None
-        # Build time series aligned with points using sample times
-        # We take times from samples that contributed to points.
-        # Since points are derived from samples 1:1 here, it aligns.
+
         ts = [s.t for s in lap.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
         if len(ts) != len(lap.cum_dist_m):
-            # fallback: cannot compute
             return None
 
         d1, d2 = self.sector_splits_m(lap)
@@ -270,13 +299,12 @@ class TelemetrySession:
         if not last.cum_dist_m or not ref.cum_dist_m:
             return None
 
-        # timestamps aligned to points (we filtered coords when building LapData)
         last_ts = [s.t for s in last.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
         ref_ts = [s.t for s in ref.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
 
         if len(last_ts) != len(last.cum_dist_m) or len(ref_ts) != len(ref.cum_dist_m):
             return None
-        # convert to "elapsed since lap start"
+
         last_t0 = last_ts[0]
         ref_t0 = ref_ts[0]
         last_elapsed = [t - last_t0 for t in last_ts]
@@ -287,10 +315,108 @@ class TelemetrySession:
         if not last_r or not ref_r or len(last_r) != len(ref_r):
             return None
 
-        # seconds -> milliseconds
         return [(last_r[i] - ref_r[i]) * 1000.0 for i in range(n)]
 
-    #main update 
+    def corner_segments(
+        self,
+        ref: LapData,
+        n: int = 300,
+        curvature_thresh: float = 0.020,
+        min_len: int = 6,
+        max_gap: int = 2,
+        smooth_w: int = 7,
+    ) -> List[CornerSegment]:
+        """
+        Detect corner segments from the reference lap using a curvature proxy.
+        """
+        if not ref.points_xz or not ref.cum_dist_m or len(ref.points_xz) < 10:
+            return []
+
+        pts = _resample_by_distance(ref.points_xz, ref.cum_dist_m, n=n)
+        if len(pts) < 10:
+            return []
+
+        headings: List[float] = []
+        for i in range(1, len(pts)):
+            dx = pts[i][0] - pts[i - 1][0]
+            dz = pts[i][1] - pts[i - 1][1]
+            headings.append(math.atan2(dz, dx))
+
+        curv = [0.0] * n
+        for i in range(1, len(headings)):
+            curv[i] = _wrap_pi(headings[i] - headings[i - 1])
+
+        curv_s = _moving_average(curv, smooth_w)
+        strong = [abs(v) > curvature_thresh for v in curv_s]
+
+        segs: List[CornerSegment] = []
+        i = 0
+        while i < n:
+            if not strong[i]:
+                i += 1
+                continue
+
+            start = i
+            gaps = 0
+            signed_sum = 0.0
+            abs_sum = 0.0
+            count = 0
+
+            j = i
+            while j < n:
+                if strong[j]:
+                    gaps = 0
+                    signed_sum += curv_s[j]
+                    abs_sum += abs(curv_s[j])
+                    count += 1
+                else:
+                    gaps += 1
+                    if gaps > max_gap:
+                        break
+                j += 1
+
+            end = min(n - 1, j - gaps - 1)
+            length = end - start + 1
+
+            if length >= min_len and count > 0:
+                avg_signed = signed_sum / count
+                avg_abs = abs_sum / count
+                direction = 1 if avg_signed > 0 else -1 if avg_signed < 0 else 0
+                segs.append(CornerSegment(start, end, direction, avg_abs))
+
+            i = j
+
+        return segs
+
+    def corner_time_losses_ms(
+        self,
+        last: LapData,
+        ref: LapData,
+        n: int = 300,
+    ) -> Optional[List[Tuple[CornerSegment, float]]]:
+        """
+        Returns [(CornerSegment, loss_ms)] sorted by loss descending.
+        loss_ms = Δt(exit) - Δt(entry) where Δt is (last - ref) in ms.
+        """
+        dt = self.delta_profile_time_ms(last, ref, n=n)
+        if not dt or len(dt) != n:
+            return None
+
+        corners = self.corner_segments(ref, n=n)
+        if not corners:
+            return []
+
+        out: List[Tuple[CornerSegment, float]] = []
+        for seg in corners:
+            a = max(0, min(n - 1, seg.start_idx))
+            b = max(0, min(n - 1, seg.end_idx))
+            if b > a:
+                out.append((seg, float(dt[b] - dt[a])))
+
+        out.sort(key=lambda x: x[1], reverse=True)
+        return out
+
+    # main update
     def update_from_snapshot(self, snap: Dict[str, Any]) -> None:
         self._last_snapshot = dict(snap)
 
@@ -337,7 +463,6 @@ class TelemetrySession:
         )
         self._samples.append(sample)
 
-        # initialize
         if self._last_lap_num is None:
             self._last_lap_num = lap
 
@@ -347,9 +472,8 @@ class TelemetrySession:
             self._current_lap_samples = []
             self._last_lap_num = lap
 
-
         coords_ok = (abs(x) > 1e-6 or abs(z) > 1e-6)
-        # Determine "paused" robustly (flag OR freeze heuristic)
+
         snap_paused = bool(snap.get("paused") or False)
         effective_paused = self._effective_paused(
             snap_paused=snap_paused,
@@ -361,8 +485,6 @@ class TelemetrySession:
             now=t,
         )
 
-        # Only append lap-geometry samples when we are actively running
-        # If in_race is reliable, this prevents menu/staging pollution.
         collect_ok = (not effective_paused) and coords_ok
         if in_race:
             collect_ok = collect_ok and (not paused)
@@ -370,8 +492,7 @@ class TelemetrySession:
         if collect_ok:
             self._current_lap_samples.append(sample)
 
-
-    #internals
+    # internals
     def _reset_session(self) -> None:
         self._session_id += 1
         self._completed_laps.clear()
@@ -379,10 +500,8 @@ class TelemetrySession:
         self._last_lap_num = None
         self._reference_idx = None
 
-        # reset pause/freeze heuristic state
         self._last_pos = None
         self._last_moving_t = None
-
 
     def _finalize_current_lap(self, on_lap_change_snapshot: Dict[str, Any]) -> None:
         if len(self._current_lap_samples) < 10:
@@ -394,10 +513,7 @@ class TelemetrySession:
 
         cum = _cumdist(points)
         lap_num = int(self._current_lap_samples[0].lap or 0)
-
-        # last_lap_ms in the snapshot at lap change should correspond to the lap that just ended
         lap_time_ms = int(on_lap_change_snapshot.get("last_lap_ms") or 0)
-
         gate = _make_start_gate(points)
 
         lap = LapData(
@@ -410,7 +526,6 @@ class TelemetrySession:
         )
         self._completed_laps.append(lap)
 
-        # invalidate reference cache (new best might appear)
         self._ensure_reference(force=True)
 
     def _ensure_reference(self, force: bool = False) -> None:
@@ -420,7 +535,6 @@ class TelemetrySession:
             self._reference_idx = None
             return
 
-        # Choose best lap by lap_time_ms if available, else choose longest/most complete (largest cumdist)
         best_i: Optional[int] = None
         best_time: Optional[int] = None
 
@@ -434,14 +548,12 @@ class TelemetrySession:
             self._reference_idx = best_i
             return
 
-        # fallback: most distance (in case times not coming through)
         best_i = max(
             range(len(self._completed_laps)),
             key=lambda j: (self._completed_laps[j].cum_dist_m[-1] if self._completed_laps[j].cum_dist_m else 0.0),
         )
         self._reference_idx = best_i
 
-        
     def _effective_paused(
         self,
         snap_paused: bool,
@@ -457,38 +569,30 @@ class TelemetrySession:
 
         Uses BOTH:
         - snapshot paused flag (fast path)
-        - heuristic freeze detection (works even if flag decode is imperfect)
+        - heuristic freeze detection
 
         Heuristic: treat as "paused/frozen" if position is stable AND controls are idle AND speed is low
         continuously for >0.7s.
         """
-
-        # Initialize moving timer so heuristic works even if we start while paused/idle.
         if self._last_moving_t is None:
             self._last_moving_t = now
 
-        #position stability
         pos = (x, z)
         pos_stable = False
         if self._last_pos is not None:
             dx = pos[0] - self._last_pos[0]
             dz = pos[1] - self._last_pos[1]
-            # threshold is in "coord units"; tune later if needed
-            pos_stable = (dx * dx + dz * dz) < 0.01  # ~0.1 units
+            pos_stable = (dx * dx + dz * dz) < 0.01
         self._last_pos = pos
 
-        #controls/speed idle
         controls_idle = (throttle < 0.5 and brake < 0.5)
         speed_idle = (speed_kmh < 1.0)
 
-        # Update last moving time whenever we appear to be moving/active.
         if not (pos_stable and controls_idle and speed_idle):
             self._last_moving_t = now
 
         heuristic_paused = (now - self._last_moving_t) > 0.7
-        
         return bool(snap_paused) or heuristic_paused
-
 
 
 def _interp_time_at_distance(cumdist: List[float], ts: List[float], target_d: float) -> float:
