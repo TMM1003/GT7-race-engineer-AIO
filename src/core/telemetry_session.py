@@ -177,7 +177,11 @@ class TelemetrySession:
         # cached auto-reference lap index
         self._reference_idx: Optional[int] = None
 
-    # ---------- public API ----------
+        # robust pause/freeze detection
+        self._last_pos: Optional[Tuple[float, float]] = None
+        self._last_moving_t: Optional[float] = None
+
+    #public API
     def latest_snapshot(self) -> Dict[str, Any]:
         return self._last_snapshot
 
@@ -258,7 +262,35 @@ class TelemetrySession:
             return None
         return [last_r[i] - ref_r[i] for i in range(n)]
 
-    # ---------- main update ----------
+    def delta_profile_time_ms(self, last: LapData, ref: LapData, n: int = 300) -> Optional[List[float]]:
+        """
+        Compute time delta (last - ref) aligned by lap distance, resampled to N points.
+        Returns list of delta in milliseconds for each resampled distance bin.
+        """
+        if not last.cum_dist_m or not ref.cum_dist_m:
+            return None
+
+        # timestamps aligned to points (we filtered coords when building LapData)
+        last_ts = [s.t for s in last.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
+        ref_ts = [s.t for s in ref.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
+
+        if len(last_ts) != len(last.cum_dist_m) or len(ref_ts) != len(ref.cum_dist_m):
+            return None
+        # convert to "elapsed since lap start"
+        last_t0 = last_ts[0]
+        ref_t0 = ref_ts[0]
+        last_elapsed = [t - last_t0 for t in last_ts]
+        ref_elapsed = [t - ref_t0 for t in ref_ts]
+
+        last_r = _resample_series_by_distance(last_elapsed, last.cum_dist_m, n=n)
+        ref_r = _resample_series_by_distance(ref_elapsed, ref.cum_dist_m, n=n)
+        if not last_r or not ref_r or len(last_r) != len(ref_r):
+            return None
+
+        # seconds -> milliseconds
+        return [(last_r[i] - ref_r[i]) * 1000.0 for i in range(n)]
+
+    #main update 
     def update_from_snapshot(self, snap: Dict[str, Any]) -> None:
         self._last_snapshot = dict(snap)
 
@@ -315,17 +347,42 @@ class TelemetrySession:
             self._current_lap_samples = []
             self._last_lap_num = lap
 
-        # collect samples for current lap (only if coords are meaningful)
-        if abs(x) > 1e-6 or abs(z) > 1e-6:
+
+        coords_ok = (abs(x) > 1e-6 or abs(z) > 1e-6)
+        # Determine "paused" robustly (flag OR freeze heuristic)
+        snap_paused = bool(snap.get("paused") or False)
+        effective_paused = self._effective_paused(
+            snap_paused=snap_paused,
+            x=x,
+            z=z,
+            speed_kmh=speed,
+            throttle=throttle,
+            brake=brake,
+            now=t,
+        )
+
+        # Only append lap-geometry samples when we are actively running
+        # If in_race is reliable, this prevents menu/staging pollution.
+        collect_ok = (not effective_paused) and coords_ok
+        if in_race:
+            collect_ok = collect_ok and (not paused)
+
+        if collect_ok:
             self._current_lap_samples.append(sample)
 
-    # ---------- internals ----------
+
+    #internals
     def _reset_session(self) -> None:
         self._session_id += 1
         self._completed_laps.clear()
         self._current_lap_samples.clear()
         self._last_lap_num = None
         self._reference_idx = None
+
+        # reset pause/freeze heuristic state
+        self._last_pos = None
+        self._last_moving_t = None
+
 
     def _finalize_current_lap(self, on_lap_change_snapshot: Dict[str, Any]) -> None:
         if len(self._current_lap_samples) < 10:
@@ -364,20 +421,74 @@ class TelemetrySession:
             return
 
         # Choose best lap by lap_time_ms if available, else choose longest/most complete (largest cumdist)
-        best_i = None
-        best_time = None
+        best_i: Optional[int] = None
+        best_time: Optional[int] = None
+
         for i, lap in enumerate(self._completed_laps):
             if lap.lap_time_ms and lap.lap_time_ms > 0:
                 if best_time is None or lap.lap_time_ms < best_time:
                     best_time = lap.lap_time_ms
                     best_i = i
+
         if best_i is not None:
             self._reference_idx = best_i
             return
 
         # fallback: most distance (in case times not coming through)
-        best_i = max(range(len(self._completed_laps)), key=lambda j: (self._completed_laps[j].cum_dist_m[-1] if self._completed_laps[j].cum_dist_m else 0.0))
+        best_i = max(
+            range(len(self._completed_laps)),
+            key=lambda j: (self._completed_laps[j].cum_dist_m[-1] if self._completed_laps[j].cum_dist_m else 0.0),
+        )
         self._reference_idx = best_i
+
+        
+    def _effective_paused(
+        self,
+        snap_paused: bool,
+        x: float,
+        z: float,
+        speed_kmh: float,
+        throttle: float,
+        brake: float,
+        now: float,
+    ) -> bool:
+        """
+        Returns True when we should pause lap-geometry collection.
+
+        Uses BOTH:
+        - snapshot paused flag (fast path)
+        - heuristic freeze detection (works even if flag decode is imperfect)
+
+        Heuristic: treat as "paused/frozen" if position is stable AND controls are idle AND speed is low
+        continuously for >0.7s.
+        """
+
+        # Initialize moving timer so heuristic works even if we start while paused/idle.
+        if self._last_moving_t is None:
+            self._last_moving_t = now
+
+        #position stability
+        pos = (x, z)
+        pos_stable = False
+        if self._last_pos is not None:
+            dx = pos[0] - self._last_pos[0]
+            dz = pos[1] - self._last_pos[1]
+            # threshold is in "coord units"; tune later if needed
+            pos_stable = (dx * dx + dz * dz) < 0.01  # ~0.1 units
+        self._last_pos = pos
+
+        #controls/speed idle
+        controls_idle = (throttle < 0.5 and brake < 0.5)
+        speed_idle = (speed_kmh < 1.0)
+
+        # Update last moving time whenever we appear to be moving/active.
+        if not (pos_stable and controls_idle and speed_idle):
+            self._last_moving_t = now
+
+        heuristic_paused = (now - self._last_moving_t) > 0.7
+        
+        return bool(snap_paused) or heuristic_paused
+
 
 
 def _interp_time_at_distance(cumdist: List[float], ts: List[float], target_d: float) -> float:

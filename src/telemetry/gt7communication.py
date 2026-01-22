@@ -46,13 +46,13 @@ class GTData:
         if not ddata:
             return GTData()
 
-        # ---- Position/physics (0x04..0x34 range in docs) ----
+        # Position/physics (0x04..0x34 range in docs)
         # PositionX/Y/Z are float32 at the start of that block.
         position_x = struct.unpack("f", ddata[0x04:0x08])[0]
         position_y = struct.unpack("f", ddata[0x08:0x0C])[0]
         position_z = struct.unpack("f", ddata[0x0C:0x10])[0]
 
-        # ---- Packet metadata / timing ----
+        # Packet metadata / timing
         package_id = struct.unpack("i", ddata[0x70:0x74])[0]
         best_lap = struct.unpack("i", ddata[0x78:0x7C])[0]
         last_lap = struct.unpack("i", ddata[0x7C:0x80])[0]
@@ -61,14 +61,14 @@ class GTData:
 
         time_on_track = timedelta(seconds=round(struct.unpack("i", ddata[0x80:0x84])[0] / 1000))
 
-        # ---- Engine / fuel / speed ----
+        # Engine / fuel / speed 
         fuel_capacity = struct.unpack("f", ddata[0x48:0x4C])[0]
         current_fuel = struct.unpack("f", ddata[0x44:0x48])[0]
         car_speed = 3.6 * struct.unpack("f", ddata[0x4C:0x50])[0]  # m/s -> km/h
 
         rpm = struct.unpack("f", ddata[0x3C:0x40])[0]
 
-        # ---- Controls (0x90..0x92 range in docs) ----
+        # Controls (0x90..0x92 range in docs) 
         # Gear byte packs current+suggested: low nibble = current, high nibble = suggested
         gear_byte = struct.unpack("B", ddata[0x90:0x91])[0]
         current_gear = gear_byte & 0b00001111
@@ -77,7 +77,7 @@ class GTData:
         throttle = struct.unpack("B", ddata[0x91:0x92])[0] / 2.55
         brake = struct.unpack("B", ddata[0x92:0x93])[0] / 2.55
 
-        # ---- Flags (docs mention flags at 0x8E; keeping your existing interpretation) ----
+        # Flags (docs mention flags at 0x8E; keeping your existing interpretation)
         flags = struct.unpack("B", ddata[0x8E:0x8F])[0]
         is_paused = bin(flags)[-2] == "1"
         in_race = bin(flags)[-1] == "1"

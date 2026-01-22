@@ -19,7 +19,7 @@ class AppController(QtCore.QObject):
         self.state = RaceState()
         self.events = EventEngine()
 
-        # NEW: telemetry history for plots/map/table
+        #Telemetry history for plots/map/table
         self.session = TelemetrySession(max_samples=6000)
 
         ps_ip = os.getenv("GT7_PLAYSTATION_IP", "").strip() or None
@@ -91,10 +91,16 @@ class AppController(QtCore.QObject):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
+
+    # Use Fusion for predictable palette rendering across OS themes
+    app.setStyle("Fusion")
+
     ctl = AppController()
     ctl.window.show()
+
     app.aboutToQuit.connect(ctl.shutdown)
     sys.exit(app.exec())
+
 
 
 if __name__ == "__main__":
