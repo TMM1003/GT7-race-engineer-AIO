@@ -1,0 +1,5 @@
+[project]
+name = "gt7-race-engineer"
+version = "0.1.0"
+description = "Desktop race engineer for GT7 via UDP telemetry"
+requires-python = ">=3.11"
