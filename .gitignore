@@ -5,5 +5,4 @@ dist/
 build/
 *.spec
 WhatsNext.md
-packaging.txt
 DocumentFormatTesting/

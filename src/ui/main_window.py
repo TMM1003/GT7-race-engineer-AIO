@@ -10,12 +10,17 @@ from src.ui.track_map import TrackMapWidget
 from src.ui.graphs import GraphsWidget, GraphsOverlayWidget
 from src.ui.telemetry_table import TelemetryTableWidget
 from src.ui.corner_table import CornerTableWidget
+from src.ui.settings_tab import SettingsTab
 
 
 class MainWindow(QtWidgets.QMainWindow):
     sig_toggle_voice = QtCore.Signal(bool)
     sig_force_ip = QtCore.Signal(str)
     sig_speak_now = QtCore.Signal()
+
+    sig_apply_settings = QtCore.Signal(dict)
+    sig_start_new_run = QtCore.Signal()
+    sig_open_run_dir = QtCore.Signal()
 
     def __init__(self):
         super().__init__()
@@ -41,6 +46,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # Telemetry table stays as a normal tab
         self.telemetry_table = TelemetryTableWidget()
         self.tabs.addTab(self.telemetry_table, "Telemetry (All Fields)")
+
+
+        # Settings / Research tab
+        self.settings_tab = SettingsTab()
+        self.tabs.addTab(self.settings_tab, "Research/Config")
+
+        # forward signals
+        self.settings_tab.sig_apply.connect(self.sig_apply_settings.emit)
+        self.settings_tab.sig_start_new_run.connect(self.sig_start_new_run.emit)
+        self.settings_tab.sig_open_run_dir.connect(self.sig_open_run_dir.emit)
 
         # Dockable Panels (map + graphs visible simultaneously / floatable windows)
         self.track_map = TrackMapWidget()

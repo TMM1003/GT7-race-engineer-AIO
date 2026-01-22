@@ -30,7 +30,7 @@ class TelemetrySample:
 @dataclass
 class LapData:
     lap_num: int
-    samples: List[TelemetrySample]           # raw samples (10 Hz in your current architecture)
+    samples: List[TelemetrySample]           # raw samples (60 Hz in the current architecture, formerly 10Hz)
     points_xz: List[Tuple[float, float]]     # extracted (x,z)
     cum_dist_m: List[float]                  # cumulative distance along points
     lap_time_ms: int                         # from snapshot last_lap_ms at lap change, if available
@@ -219,10 +219,10 @@ class TelemetrySession:
     """
     Rolling history + per-lap storage + derived lap distance axis.
 
-    This is fed at ~10 Hz by AppController._tick via snapshot().
+    This is fed at ~60 Hz (formerly 10) by AppController._tick via snapshot().
     """
-
-    def __init__(self, max_samples: int = 6000):
+    #def __init__(self, max_samples: int = 6000):
+    def __init__(self, max_samples: int = 36000, on_lap_finalized=None):
         self._samples: Deque[TelemetrySample] = deque(maxlen=max_samples)
 
         self._completed_laps: List[LapData] = []
@@ -241,7 +241,11 @@ class TelemetrySession:
         # robust pause/freeze detection
         self._last_pos: Optional[Tuple[float, float]] = None
         self._last_moving_t: Optional[float] = None
-
+        
+        # Optional hook for thesis/research: called after a lap is finalized.
+        # Signature: (lap: LapData, session: TelemetrySession) -> None
+        self.on_lap_finalized = on_lap_finalized
+    
     # public API
     def latest_snapshot(self) -> Dict[str, Any]:
         return self._last_snapshot
@@ -653,6 +657,14 @@ class TelemetrySession:
         self._completed_laps.append(lap)
 
         self._ensure_reference(force=True)
+        # Research/thesis hook: export datasets, run inference, etc.
+        cb = getattr(self, "on_lap_finalized", None)
+        if cb is not None:
+            try:
+                cb(lap, self)
+            except Exception:
+                # Never allow research/export failures to crash the live session.
+                pass
 
     def _ensure_reference(self, force: bool = False) -> None:
         if self._reference_idx is not None and not force:
