@@ -65,7 +65,13 @@ class AppController(QtCore.QObject):
 
         # NEW: history/session for visualizations
         self.session.update_from_snapshot(snap)
-        self.window.update_visualizations(self.session, snap)
+
+        # Prevent one missing method / plot error from hard-looping every 100 ms
+        try:
+            self.window.update_visualizations(self.session, snap)
+        except Exception as e:
+            # If you want, replace print with logging later
+            print("Visualization error:", repr(e))
 
         for ev in self.events.consume(self.state):
             self.window.append_event(ev)

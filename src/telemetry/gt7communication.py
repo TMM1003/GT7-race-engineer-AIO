@@ -1,3 +1,4 @@
+# src/telemetry/gt7communication.py
 import os
 import socket
 import struct
@@ -23,6 +24,10 @@ class GTData:
     throttle_pct: float = 0.0
     brake_pct: float = 0.0
 
+    # NEW (documented by protocol layout)
+    current_gear: int = 0
+    suggested_gear: int = 0
+
     fuel_capacity: float = 0.0
     current_fuel: float = 0.0
 
@@ -31,30 +36,51 @@ class GTData:
 
     time_on_track: timedelta = timedelta(seconds=0)
 
+    # NEW (documented by protocol layout)
+    position_x: float = 0.0
+    position_y: float = 0.0
+    position_z: float = 0.0
+
     @staticmethod
     def from_packet(ddata: bytes) -> "GTData":
         if not ddata:
             return GTData()
 
+        # ---- Position/physics (0x04..0x34 range in docs) ----
+        # PositionX/Y/Z are float32 at the start of that block.
+        position_x = struct.unpack("f", ddata[0x04:0x08])[0]
+        position_y = struct.unpack("f", ddata[0x08:0x0C])[0]
+        position_z = struct.unpack("f", ddata[0x0C:0x10])[0]
+
+        # ---- Packet metadata / timing ----
         package_id = struct.unpack("i", ddata[0x70:0x74])[0]
         best_lap = struct.unpack("i", ddata[0x78:0x7C])[0]
         last_lap = struct.unpack("i", ddata[0x7C:0x80])[0]
         current_lap = struct.unpack("h", ddata[0x74:0x76])[0]
         total_laps = struct.unpack("h", ddata[0x76:0x78])[0]
 
+        time_on_track = timedelta(seconds=round(struct.unpack("i", ddata[0x80:0x84])[0] / 1000))
+
+        # ---- Engine / fuel / speed ----
         fuel_capacity = struct.unpack("f", ddata[0x48:0x4C])[0]
         current_fuel = struct.unpack("f", ddata[0x44:0x48])[0]
-        car_speed = 3.6 * struct.unpack("f", ddata[0x4C:0x50])[0]
+        car_speed = 3.6 * struct.unpack("f", ddata[0x4C:0x50])[0]  # m/s -> km/h
 
         rpm = struct.unpack("f", ddata[0x3C:0x40])[0]
+
+        # ---- Controls (0x90..0x92 range in docs) ----
+        # Gear byte packs current+suggested: low nibble = current, high nibble = suggested
+        gear_byte = struct.unpack("B", ddata[0x90:0x91])[0]
+        current_gear = gear_byte & 0b00001111
+        suggested_gear = (gear_byte >> 4) & 0b00001111
+
         throttle = struct.unpack("B", ddata[0x91:0x92])[0] / 2.55
         brake = struct.unpack("B", ddata[0x92:0x93])[0] / 2.55
 
+        # ---- Flags (docs mention flags at 0x8E; keeping your existing interpretation) ----
         flags = struct.unpack("B", ddata[0x8E:0x8F])[0]
         is_paused = bin(flags)[-2] == "1"
         in_race = bin(flags)[-1] == "1"
-
-        time_on_track = timedelta(seconds=round(struct.unpack("i", ddata[0x80:0x84])[0] / 1000))
 
         return GTData(
             package_id=package_id,
@@ -66,11 +92,16 @@ class GTData:
             rpm=rpm,
             throttle_pct=throttle,
             brake_pct=brake,
+            current_gear=current_gear,
+            suggested_gear=suggested_gear,
             fuel_capacity=fuel_capacity,
             current_fuel=current_fuel,
             is_paused=is_paused,
             in_race=in_race,
             time_on_track=time_on_track,
+            position_x=position_x,
+            position_y=position_y,
+            position_z=position_z,
         )
 
 
@@ -123,14 +154,16 @@ class GT7Communication(Thread):
     def is_connected(self) -> bool:
         return self._last_rx_time > 0 and (time.time() - self._last_rx_time) <= 1.0
 
+    def _on_sample(self, _gt: GTData) -> None:
+        # Reserved for future: push into a higher-rate session buffer, etc.
+        return
+
     def snapshot(self) -> Dict[str, Any]:
         d = self._last_gtdata
-
         if d is None:
             return {}
 
         return {
-            # --- connection ---
             "connected": self.is_connected(),
             "ip": self._discovered_ip
                 or (None if self.playstation_ip == self.DISCOVERY_SENTINEL else self.playstation_ip),
@@ -138,41 +171,30 @@ class GT7Communication(Thread):
             "rx_age_s": None if self._last_rx_time == 0 else (time.time() - self._last_rx_time),
             "package_id": d.package_id,
 
-            # --- race state ---
             "lap": d.current_lap,
             "total_laps": d.total_laps,
             "in_race": d.in_race,
             "paused": d.is_paused,
             "time_on_track_s": int(d.time_on_track.total_seconds()),
 
-            # --- vehicle dynamics ---
             "speed_kmh": d.car_speed_kmh,
             "rpm": d.rpm,
             "gear": d.current_gear,
             "suggested_gear": d.suggested_gear,
             "throttle": d.throttle_pct,
             "brake": d.brake_pct,
-            "boost": d.boost,
 
-            # --- fuel ---
             "fuel": d.current_fuel,
             "fuel_capacity": d.fuel_capacity,
 
-            # --- lap timing ---
             "best_lap_ms": d.best_lap_ms,
             "last_lap_ms": d.last_lap_ms,
 
-            # --- spatial (TRACK MAP ENABLES HERE) ---
             "position_x": d.position_x,
             "position_y": d.position_y,
             "position_z": d.position_z,
-
-            # --- optional extras (future graphs) ---
-            "estimated_top_speed": d.estimated_top_speed,
-            "oil_temp": d.oil_temp,
-            "water_temp": d.water_temp,
-            "ride_height": d.ride_height,
         }
+
 
     def _send_hb(self, s: socket.socket, ip: str) -> None:
         try:
@@ -244,7 +266,10 @@ class GT7Communication(Thread):
                         gt = GTData.from_packet(ddata)
                         self._last_gtdata = gt
                         self._last_rx_time = time.time()
+
+                        # now safe (no AttributeError)
                         self._on_sample(gt)
+
                         self._telemetry_seq += 1
 
                         hb_counter += 1
@@ -258,6 +283,7 @@ class GT7Communication(Thread):
                         break
 
             except Exception:
+                # Keep this broad catch for now, but once stable we should log exceptions.
                 time.sleep(0.5)
             finally:
                 if s:
