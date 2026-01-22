@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6 import QtWidgets, QtCore
 
-from src.core.telemetry_session import TelemetrySession, LapData, CornerSegment
+from src.core.telemetry_session import TelemetrySession, CornerSegment
 
 
 class CornerTableWidget(QtWidgets.QWidget):
@@ -72,8 +72,7 @@ class CornerTableWidget(QtWidgets.QWidget):
 
         # show top N
         top_n = 12
-        rows = losses[:top_n]
-
+        rows = rows[:top_n]
 
         self.table.setRowCount(len(rows))
 
@@ -82,9 +81,12 @@ class CornerTableWidget(QtWidgets.QWidget):
             it.setTextAlignment(QtCore.Qt.AlignCenter)
             return it
 
+        def fmt_opt(x, fmt: str = "{:+.1f}") -> str:
+            return "—" if x is None else fmt.format(float(x))
+
         for r, row in enumerate(rows):
             seg: CornerSegment = row["seg"]
-            loss_ms: float = row["loss_ms"]
+            loss_ms: float = float(row["loss_ms"])
 
             start_pct = 100.0 * (seg.start_idx / 299.0)
             end_pct = 100.0 * (seg.end_idx / 299.0)
@@ -96,13 +98,10 @@ class CornerTableWidget(QtWidgets.QWidget):
             else:
                 d = "?"
 
-            bdm = row["brake_start_delta_m"]
-            tdm = row["throttle_on_delta_m"]
-            dmin = row["min_speed_delta_kmh"]
-            dexit = row["exit_speed_delta_kmh"]
-
-            def fmt_opt(x, fmt="{:.1f}"):
-                return "—" if x is None else fmt.format(x)
+            bdm = row.get("brake_start_delta_m")
+            tdm = row.get("throttle_on_delta_m")
+            dmin = float(row.get("min_speed_delta_kmh", 0.0))
+            dexit = float(row.get("exit_speed_delta_kmh", 0.0))
 
             self.table.setItem(r, 0, qitem(str(r + 1)))
             self.table.setItem(r, 1, qitem(f"{start_pct:.1f}"))

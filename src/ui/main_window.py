@@ -72,9 +72,7 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
-        # ----------------------------
         # Theme preference + menu
-        # ----------------------------
         self._settings = QtCore.QSettings("GT7RaceEngineer", "GT7RaceEngineerApp")
         theme_default = self._settings.value("ui/theme", "studio_gray", type=str)
 
