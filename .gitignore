@@ -4,4 +4,6 @@ __pycache__/
 dist/
 build/
 *.spec
-WhatsNext.txt
+WhatsNext.md
+packaging.txt
+DocumentFormatTesting/
