@@ -69,23 +69,45 @@ class MainWindow(QtWidgets.QMainWindow):
             self.resizeDocks([self.dock_track], [360], QtCore.Qt.Horizontal)
         except Exception:
             pass
-        # ---- Theme preference (persisted) ----
-        self._settings = QtCore.QSettings("GT7RaceEngineer", "GT7RaceEngineerApp")
-        dark_default = self._settings.value("ui/dark_mode", True, type=bool)
 
-        # ---- Menu ----
+        # Theme preference + menu
+        self._settings = QtCore.QSettings("GT7RaceEngineer", "GT7RaceEngineerApp")
+        theme_default = self._settings.value("ui/theme", "studio_gray", type=str)
+
         menubar = self.menuBar()
         view_menu = menubar.addMenu("View")
+        theme_menu = view_menu.addMenu("Theme")
 
-        self.act_dark_mode = QtGui.QAction("Dark Mode", self)
-        self.act_dark_mode.setCheckable(True)
-        self.act_dark_mode.setChecked(bool(dark_default))
-        self.act_dark_mode.toggled.connect(self._on_toggle_dark_mode)
-        view_menu.addAction(self.act_dark_mode)
+        self._theme_group = QtGui.QActionGroup(self)
+        self._theme_group.setExclusive(True)
+
+        def add_theme_action(label: str, key: str) -> QtGui.QAction:
+            act = QtGui.QAction(label, self)
+            act.setCheckable(True)
+            act.setData(key)
+            self._theme_group.addAction(act)
+            theme_menu.addAction(act)
+            return act
+
+        self.act_theme_light = add_theme_action("Light (White)", "light")
+        self.act_theme_gray = add_theme_action("Studio Gray", "studio_gray")
+        self.act_theme_dark = add_theme_action("Dark (Near-black)", "dark")
+
+        # Check saved theme
+        matched = False
+        for act in self._theme_group.actions():
+            if str(act.data()) == str(theme_default):
+                act.setChecked(True)
+                matched = True
+                break
+        if not matched:
+            self.act_theme_gray.setChecked(True)
+            theme_default = "studio_gray"
+
+        self._theme_group.triggered.connect(self._on_theme_selected)
 
         # Apply immediately
-        self._apply_theme(bool(dark_default))
-
+        self._apply_theme(str(theme_default))
 
     def _make_dock(self, title: str, widget: QtWidgets.QWidget) -> QtWidgets.QDockWidget:
         dock = QtWidgets.QDockWidget(title, self)
@@ -205,50 +227,96 @@ class MainWindow(QtWidgets.QMainWindow):
             f"[{QtCore.QDateTime.currentDateTime().toString('HH:mm:ss')}] {ev.title} — {ev.speech}"
         )
 
-    def _apply_theme(self, dark: bool) -> None:
-        # Applies a Fusion-based light/dark palette to the whole app and keeps pyqtgraph consistent.
+    @QtCore.Slot(QtGui.QAction)
+    def _on_theme_selected(self, action: QtGui.QAction) -> None:
+        key = str(action.data())
+        self._settings.setValue("ui/theme", key)
+        self._apply_theme(key)
+
+    def _apply_theme(self, theme: str) -> None:
+        """
+        Apply one of: 'light', 'studio_gray', 'dark'
+        Uses Fusion base for consistency across platforms.
+        """
         app = QtWidgets.QApplication.instance()
         if app is None:
             return
-        
+
         app.setStyle("Fusion")
-        palette = QtGui.QPalette()
+        p = QtGui.QPalette()
 
-        if dark:
-            # Dark palette (Fusion-friendly)
-            palette.setColor(QtGui.QPalette.Window, QtGui.QColor(18, 18, 18))
-            palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(220, 220, 220))
-            palette.setColor(QtGui.QPalette.Base, QtGui.QColor(30, 30, 30))
-            palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(45, 45, 45))
-            palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 255))
-            palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(255, 255, 255))
-            palette.setColor(QtGui.QPalette.Text, QtGui.QColor(220, 220, 220))
-            palette.setColor(QtGui.QPalette.Button, QtGui.QColor(45, 45, 45))
-            palette.setColor(QtGui.QPalette.ButtonText, QtGui.QColor(220, 220, 220))
-            palette.setColor(QtGui.QPalette.BrightText, QtGui.QColor(255, 0, 0))
-            palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(38, 79, 120))
-            palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
-            palette.setColor(QtGui.QPalette.Link, QtGui.QColor(80, 170, 255))
+        theme = (theme or "studio_gray").strip().lower()
 
-            app.setPalette(palette)
+        if theme == "light":
+            # True light: white surfaces, dark text
+            p.setColor(QtGui.QPalette.Window, QtGui.QColor(245, 245, 245))
+            p.setColor(QtGui.QPalette.WindowText, QtGui.QColor(15, 15, 15))
+            p.setColor(QtGui.QPalette.Base, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(240, 240, 240))
+            p.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(15, 15, 15))
+            p.setColor(QtGui.QPalette.Text, QtGui.QColor(15, 15, 15))
+            p.setColor(QtGui.QPalette.Button, QtGui.QColor(240, 240, 240))
+            p.setColor(QtGui.QPalette.ButtonText, QtGui.QColor(15, 15, 15))
+            p.setColor(QtGui.QPalette.Highlight, QtGui.QColor(38, 79, 120))
+            p.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.Link, QtGui.QColor(0, 102, 204))
 
-            # pyqtgraph colors (global defaults)
+            app.setPalette(p)
+
+            pg.setConfigOption("background", "w")
+            pg.setConfigOption("foreground", "k")
+
+            app.setStyleSheet(
+                "QToolTip { color: #111; background-color: #fff; border: 1px solid #888; }"
+            )
+
+        elif theme == "dark":
+            # Near-black dark
+            p.setColor(QtGui.QPalette.Window, QtGui.QColor(18, 18, 18))
+            p.setColor(QtGui.QPalette.WindowText, QtGui.QColor(220, 220, 220))
+            p.setColor(QtGui.QPalette.Base, QtGui.QColor(25, 25, 25))
+            p.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(35, 35, 35))
+            p.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.Text, QtGui.QColor(220, 220, 220))
+            p.setColor(QtGui.QPalette.Button, QtGui.QColor(35, 35, 35))
+            p.setColor(QtGui.QPalette.ButtonText, QtGui.QColor(220, 220, 220))
+            p.setColor(QtGui.QPalette.BrightText, QtGui.QColor(255, 0, 0))
+            p.setColor(QtGui.QPalette.Highlight, QtGui.QColor(38, 79, 120))
+            p.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.Link, QtGui.QColor(80, 170, 255))
+
+            app.setPalette(p)
+
             pg.setConfigOption("background", (18, 18, 18))
             pg.setConfigOption("foreground", (220, 220, 220))
 
-            # Optional tooltip styling
             app.setStyleSheet(
                 "QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }"
             )
-        else:
-            # Light palette reset
-            app.setPalette(app.style().standardPalette())
-            pg.setConfigOption("background", "w")
-            pg.setConfigOption("foreground", "k")
-            app.setStyleSheet("")
-        
-    @QtCore.Slot(bool)
-    def _on_toggle_dark_mode(self, enabled: bool) -> None:
-        self._settings.setValue("ui/dark_mode", bool(enabled))
-        self._apply_theme(bool(enabled))
 
+        else:
+            # Studio Gray (your preferred look)
+            p.setColor(QtGui.QPalette.Window, QtGui.QColor(53, 53, 53))
+            p.setColor(QtGui.QPalette.WindowText, QtGui.QColor(230, 230, 230))
+            p.setColor(QtGui.QPalette.Base, QtGui.QColor(42, 42, 42))
+            p.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(60, 60, 60))
+            p.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(255, 255, 255))
+            p.setColor(QtGui.QPalette.Text, QtGui.QColor(230, 230, 230))
+            p.setColor(QtGui.QPalette.Button, QtGui.QColor(60, 60, 60))
+            p.setColor(QtGui.QPalette.ButtonText, QtGui.QColor(230, 230, 230))
+            p.setColor(QtGui.QPalette.BrightText, QtGui.QColor(255, 0, 0))
+            p.setColor(QtGui.QPalette.Highlight, QtGui.QColor(90, 135, 200))
+            p.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(0, 0, 0))
+            p.setColor(QtGui.QPalette.Link, QtGui.QColor(80, 170, 255))
+
+            app.setPalette(p)
+
+            pg.setConfigOption("background", (35, 35, 35))
+            pg.setConfigOption("foreground", (230, 230, 230))
+
+            app.setStyleSheet(
+                "QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }"
+            )
