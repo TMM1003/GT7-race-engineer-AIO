@@ -1,4 +1,4 @@
-cd gt7-race-engineer
+cd (containing folder)
 python -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install -U pip wheel setuptools
