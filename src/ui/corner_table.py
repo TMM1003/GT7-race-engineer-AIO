@@ -19,8 +19,11 @@ class CornerTableWidget(QtWidgets.QWidget):
         title.setStyleSheet("font-weight: 700;")
         layout.addWidget(title)
 
-        self.table = QtWidgets.QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["#", "Start %", "End %", "Dir", "Loss (ms)"])
+        self.table = QtWidgets.QTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels(
+            ["#", "Start %", "End %", "Dir", "Loss (ms)", "ΔBrake (m)", "ΔThrottle (m)", "ΔMinSpd", "ΔExitSpd"]
+        )
+
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -62,14 +65,15 @@ class CornerTableWidget(QtWidgets.QWidget):
             self.clear()
             return
 
-        losses = session.corner_time_losses_ms(last, ref, n=300)
-        if losses is None:
+        rows = session.corner_coaching_rows(last, ref, n=300)
+        if rows is None:
             self.clear()
             return
 
         # show top N
         top_n = 12
         rows = losses[:top_n]
+
 
         self.table.setRowCount(len(rows))
 
@@ -78,7 +82,10 @@ class CornerTableWidget(QtWidgets.QWidget):
             it.setTextAlignment(QtCore.Qt.AlignCenter)
             return it
 
-        for r, (seg, loss_ms) in enumerate(rows, start=0):
+        for r, row in enumerate(rows):
+            seg: CornerSegment = row["seg"]
+            loss_ms: float = row["loss_ms"]
+
             start_pct = 100.0 * (seg.start_idx / 299.0)
             end_pct = 100.0 * (seg.end_idx / 299.0)
 
@@ -89,10 +96,22 @@ class CornerTableWidget(QtWidgets.QWidget):
             else:
                 d = "?"
 
+            bdm = row["brake_start_delta_m"]
+            tdm = row["throttle_on_delta_m"]
+            dmin = row["min_speed_delta_kmh"]
+            dexit = row["exit_speed_delta_kmh"]
+
+            def fmt_opt(x, fmt="{:.1f}"):
+                return "—" if x is None else fmt.format(x)
+
             self.table.setItem(r, 0, qitem(str(r + 1)))
             self.table.setItem(r, 1, qitem(f"{start_pct:.1f}"))
             self.table.setItem(r, 2, qitem(f"{end_pct:.1f}"))
             self.table.setItem(r, 3, qitem(d))
             self.table.setItem(r, 4, qitem(f"{loss_ms:.0f}"))
+            self.table.setItem(r, 5, qitem(fmt_opt(bdm, "{:+.1f}")))
+            self.table.setItem(r, 6, qitem(fmt_opt(tdm, "{:+.1f}")))
+            self.table.setItem(r, 7, qitem(f"{dmin:+.1f}"))
+            self.table.setItem(r, 8, qitem(f"{dexit:+.1f}"))
 
         self.table.resizeColumnsToContents()

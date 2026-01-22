@@ -185,6 +185,35 @@ def _moving_average(xs: List[float], w: int) -> List[float]:
         out[i] = s / len(q)
     return out
 
+def _first_threshold_crossing(
+    xs: List[float],
+    i0: int,
+    i1: int,
+    thr: float,
+    hold: int = 3,
+) -> Optional[int]:
+    """
+    Return first index i in [i0..i1] such that xs[i..i+hold-1] are all >= thr.
+    Prevents noise-triggering.
+    """
+    n = len(xs)
+    if n == 0:
+        return None
+    i0 = max(0, min(n - 1, i0))
+    i1 = max(0, min(n - 1, i1))
+    if i1 < i0:
+        return None
+
+    for i in range(i0, i1 + 1):
+        ok = True
+        for k in range(hold):
+            j = i + k
+            if j >= n or xs[j] < thr:
+                ok = False
+                break
+        if ok:
+            return i
+    return None
 
 class TelemetrySession:
     """
@@ -415,6 +444,103 @@ class TelemetrySession:
 
         out.sort(key=lambda x: x[1], reverse=True)
         return out
+
+    def corner_coaching_rows(
+        self,
+        last: LapData,
+        ref: LapData,
+        n: int = 300,
+        brake_thr: float = 10.0,
+        throttle_thr: float = 20.0,
+        approach_pad: int = 12,
+        exit_pad: int = 12,
+        hold: int = 3,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Returns a list of rows (dicts) sorted by time loss descending.
+        """
+
+        dt = self.delta_profile_time_ms(last, ref, n=n)
+        if not dt or len(dt) != n:
+            return None
+
+        corners = self.corner_segments(ref, n=n)
+        if not corners:
+            return []
+
+        last_brake = [s.brake for s in last.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+        last_throt = [s.throttle for s in last.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+        last_spd   = [s.speed_kmh for s in last.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+
+        ref_brake = [s.brake for s in ref.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+        ref_throt = [s.throttle for s in ref.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+        ref_spd   = [s.speed_kmh for s in ref.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+
+        if len(last_brake) != len(last.cum_dist_m) or len(ref_brake) != len(ref.cum_dist_m):
+            return None
+
+        last_br = _resample_series_by_distance(last_brake, last.cum_dist_m, n=n)
+        last_th = _resample_series_by_distance(last_throt, last.cum_dist_m, n=n)
+        last_sp = _resample_series_by_distance(last_spd, last.cum_dist_m, n=n)
+
+        ref_br = _resample_series_by_distance(ref_brake, ref.cum_dist_m, n=n)
+        ref_th = _resample_series_by_distance(ref_throt, ref.cum_dist_m, n=n)
+        ref_sp = _resample_series_by_distance(ref_spd, ref.cum_dist_m, n=n)
+
+        if not all([last_br, last_th, last_sp, ref_br, ref_th, ref_sp]):
+            return None
+
+        total_m = ref.cum_dist_m[-1]
+        if total_m <= 0:
+            return None
+
+        def idx_to_m(i: int) -> float:
+            return total_m * (i / (n - 1))
+
+        rows: List[Dict[str, Any]] = []
+
+        for seg in corners:
+            a = max(0, min(n - 1, seg.start_idx))
+            b = max(0, min(n - 1, seg.end_idx))
+            if b <= a:
+                continue
+
+            loss_ms = float(dt[b] - dt[a])
+
+            ref_br_i = _first_threshold_crossing(ref_br, max(0, a - approach_pad), b, brake_thr, hold)
+            last_br_i = _first_threshold_crossing(last_br, max(0, a - approach_pad), b, brake_thr, hold)
+
+            brake_delta = (
+                idx_to_m(last_br_i) - idx_to_m(ref_br_i)
+                if ref_br_i is not None and last_br_i is not None
+                else None
+            )
+
+            ref_th_i = _first_threshold_crossing(ref_th, a, min(n - 1, b + exit_pad), throttle_thr, hold)
+            last_th_i = _first_threshold_crossing(last_th, a, min(n - 1, b + exit_pad), throttle_thr, hold)
+
+            throttle_delta = (
+                idx_to_m(last_th_i) - idx_to_m(ref_th_i)
+                if ref_th_i is not None and last_th_i is not None
+                else None
+            )
+
+            ref_min = min(ref_sp[a:b + 1])
+            last_min = min(last_sp[a:b + 1])
+
+            rows.append(
+                dict(
+                    seg=seg,
+                    loss_ms=loss_ms,
+                    brake_start_delta_m=brake_delta,
+                    throttle_on_delta_m=throttle_delta,
+                    min_speed_delta_kmh=last_min - ref_min,
+                    exit_speed_delta_kmh=last_sp[b] - ref_sp[b],
+                )
+            )
+
+        rows.sort(key=lambda r: r["loss_ms"], reverse=True)
+        return rows
 
     # main update
     def update_from_snapshot(self, snap: Dict[str, Any]) -> None:
