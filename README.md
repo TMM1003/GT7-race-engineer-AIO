@@ -1,6 +1,6 @@
 # GT7 Race Engineer (Desktop App)
 
-A local desktop "race engineer/crew chief" for Gran Turismo 7 (PS5), driven by the GT7 UDP telemetry stream.
+A "race engineer/crew chief" for Gran Turismo 7 (PS5), driven by the GT7 UDP telemetry stream.
 
 - Desktop UI (Qt via PySide6)
 - Live telemetry display (lap, speed, RPM, fuel, last/best lap)
