@@ -1,8 +1,13 @@
+# src/ui/main_window.py
 from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
 from src.core.race_state import RaceState
+from src.core.telemetry_session import TelemetrySession
+from src.ui.track_map import TrackMapWidget
+from src.ui.graphs import GraphsWidget
+from src.ui.telemetry_table import TelemetryTableWidget
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -13,11 +18,35 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("GT7 Race Engineer")
-        self.resize(700, 420)
+        self.resize(980, 720)
 
-        cw = QtWidgets.QWidget()
-        self.setCentralWidget(cw)
-        layout = QtWidgets.QVBoxLayout(cw)
+        # --- Tabs container ---
+        self.tabs = QtWidgets.QTabWidget()
+        self.setCentralWidget(self.tabs)
+
+        # --- Overview tab (your existing UI, almost unchanged) ---
+        self.overview = QtWidgets.QWidget()
+        self.tabs.addTab(self.overview, "Overview")
+        self._build_overview_ui(self.overview)
+
+        # --- New tabs ---
+        self.track_map = TrackMapWidget()
+        self.tabs.addTab(self.track_map, "Track Map")
+
+        self.graphs = GraphsWidget()
+        self.tabs.addTab(self.graphs, "Graphs")
+
+        self.telemetry_table = TelemetryTableWidget()
+        self.tabs.addTab(self.telemetry_table, "Telemetry (All Fields)")
+
+    def set_controller(self, controller):
+        self._controller = controller
+
+    # --------------------
+    # Overview UI builder
+    # --------------------
+    def _build_overview_ui(self, parent: QtWidgets.QWidget) -> None:
+        layout = QtWidgets.QVBoxLayout(parent)
 
         top = QtWidgets.QHBoxLayout()
         layout.addLayout(top)
@@ -77,12 +106,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.event_log.setMaximumBlockCount(2000)
         layout.addWidget(self.event_log, stretch=1)
 
-    def set_controller(self, controller):
-        self._controller = controller
-
     def _emit_set_ip(self):
         self.sig_force_ip.emit(self.ip_edit.text())
 
+    # --------------------
+    # Existing behavior
+    # --------------------
     def update_state(self, state: RaceState, snap: dict) -> None:
         if state.connected:
             self.lbl_status.setText("● CONNECTED")
@@ -105,6 +134,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.val_last.setText(state.last_lap_str)
         self.val_best.setText(state.best_lap_str)
+
+    def update_visualizations(self, session: TelemetrySession, snap: dict) -> None:
+        """
+        NEW: called by AppController every tick. Keeps the heavy visual work out of update_state().
+        """
+        self.track_map.update_from_session(session)
+        self.graphs.update_from_session(session)
+        self.telemetry_table.update_from_snapshot(session.latest_snapshot())
 
     def append_event(self, ev) -> None:
         self.event_log.appendPlainText(

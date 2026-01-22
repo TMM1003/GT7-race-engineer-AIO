@@ -1,3 +1,4 @@
+# src/app.py
 import os
 import sys
 from PySide6 import QtCore, QtWidgets
@@ -5,6 +6,7 @@ from PySide6 import QtCore, QtWidgets
 from src.telemetry.gt7communication import GT7Communication
 from src.core.race_state import RaceState
 from src.core.events import EventEngine
+from src.core.telemetry_session import TelemetrySession
 from src.voice.tts import VoiceEngine
 from src.ui.main_window import MainWindow
 
@@ -16,6 +18,9 @@ class AppController(QtCore.QObject):
         self.voice = VoiceEngine(enabled=True)
         self.state = RaceState()
         self.events = EventEngine()
+
+        # NEW: telemetry history for plots/map/table
+        self.session = TelemetrySession(max_samples=6000)
 
         ps_ip = os.getenv("GT7_PLAYSTATION_IP", "").strip() or None
         self.comm = GT7Communication(playstation_ip=ps_ip)
@@ -53,8 +58,14 @@ class AppController(QtCore.QObject):
 
     def _tick(self) -> None:
         snap = self.comm.snapshot()
+
+        # existing scalar state (used by voice/events + overview)
         self.state.update(snap)
         self.window.update_state(self.state, snap)
+
+        # NEW: history/session for visualizations
+        self.session.update_from_snapshot(snap)
+        self.window.update_visualizations(self.session, snap)
 
         for ev in self.events.consume(self.state):
             self.window.append_event(ev)

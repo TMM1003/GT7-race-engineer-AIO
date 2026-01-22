@@ -125,25 +125,53 @@ class GT7Communication(Thread):
 
     def snapshot(self) -> Dict[str, Any]:
         d = self._last_gtdata
+
+        if d is None:
+            return {}
+
         return {
+            # --- connection ---
             "connected": self.is_connected(),
-            "ip": self._discovered_ip or (None if self.playstation_ip == self.DISCOVERY_SENTINEL else self.playstation_ip),
+            "ip": self._discovered_ip
+                or (None if self.playstation_ip == self.DISCOVERY_SENTINEL else self.playstation_ip),
             "telemetry_seq": self._telemetry_seq,
             "rx_age_s": None if self._last_rx_time == 0 else (time.time() - self._last_rx_time),
             "package_id": d.package_id,
+
+            # --- race state ---
             "lap": d.current_lap,
             "total_laps": d.total_laps,
-            "speed_kmh": d.car_speed_kmh,
-            "rpm": d.rpm,
-            "throttle": d.throttle_pct,
-            "brake": d.brake_pct,
-            "fuel": d.current_fuel,
-            "fuel_capacity": d.fuel_capacity,
-            "best_lap_ms": d.best_lap_ms,
-            "last_lap_ms": d.last_lap_ms,
             "in_race": d.in_race,
             "paused": d.is_paused,
             "time_on_track_s": int(d.time_on_track.total_seconds()),
+
+            # --- vehicle dynamics ---
+            "speed_kmh": d.car_speed_kmh,
+            "rpm": d.rpm,
+            "gear": d.current_gear,
+            "suggested_gear": d.suggested_gear,
+            "throttle": d.throttle_pct,
+            "brake": d.brake_pct,
+            "boost": d.boost,
+
+            # --- fuel ---
+            "fuel": d.current_fuel,
+            "fuel_capacity": d.fuel_capacity,
+
+            # --- lap timing ---
+            "best_lap_ms": d.best_lap_ms,
+            "last_lap_ms": d.last_lap_ms,
+
+            # --- spatial (TRACK MAP ENABLES HERE) ---
+            "position_x": d.position_x,
+            "position_y": d.position_y,
+            "position_z": d.position_z,
+
+            # --- optional extras (future graphs) ---
+            "estimated_top_speed": d.estimated_top_speed,
+            "oil_temp": d.oil_temp,
+            "water_temp": d.water_temp,
+            "ride_height": d.ride_height,
         }
 
     def _send_hb(self, s: socket.socket, ip: str) -> None:
@@ -216,6 +244,7 @@ class GT7Communication(Thread):
                         gt = GTData.from_packet(ddata)
                         self._last_gtdata = gt
                         self._last_rx_time = time.time()
+                        self._on_sample(gt)
                         self._telemetry_seq += 1
 
                         hb_counter += 1
