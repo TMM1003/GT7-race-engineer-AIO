@@ -81,7 +81,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabifyDockWidget(self.dock_track, self.dock_corners)
         self.dock_track.raise_()
 
-        # Optional: size right docks reasonably
+        # Optional: size docks
         try:
             self.resizeDocks([self.dock_track], [380], QtCore.Qt.Horizontal)
         except Exception:
@@ -245,10 +245,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_theme(key)
 
     def _apply_theme(self, theme: str) -> None:
-        """
-        Apply one of: 'light', 'studio_gray', 'dark'
-        Uses Fusion base for consistency across platforms.
-        """
         app = QtWidgets.QApplication.instance()
         if app is None:
             return
@@ -298,7 +294,7 @@ class MainWindow(QtWidgets.QMainWindow):
             app.setStyleSheet("QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }")
 
         else:
-            # Studio Gray (your preferred look)
+            # Studio Gray
             p.setColor(QtGui.QPalette.Window, QtGui.QColor(53, 53, 53))
             p.setColor(QtGui.QPalette.WindowText, QtGui.QColor(230, 230, 230))
             p.setColor(QtGui.QPalette.Base, QtGui.QColor(42, 42, 42))
