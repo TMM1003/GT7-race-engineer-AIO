@@ -94,7 +94,6 @@ class TrackMapWidget(QtWidgets.QWidget):
 
         layout.addWidget(self._sector_panel)
 
-        
         # Plot
         self.plot = pg.PlotWidget(title="Track Map (X vs Z) — last vs reference")
         self.plot.setAspectLocked(True)

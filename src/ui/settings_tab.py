@@ -21,12 +21,12 @@ class SettingsTab(QtWidgets.QWidget):
         form = QtWidgets.QFormLayout()
         layout.addLayout(form)
 
-        # --- Research export master toggle
+        # Research export master toggle
         self.chk_research_enabled = QtWidgets.QCheckBox("Enable research export")
         self.chk_research_enabled.setChecked(True)
         form.addRow(self.chk_research_enabled)
 
-        # --- Output root
+        # Output root
         out_row = QtWidgets.QHBoxLayout()
         self.edit_output_root = QtWidgets.QLineEdit("data/runs")
         self.btn_browse = QtWidgets.QPushButton("Browse…")
@@ -35,19 +35,19 @@ class SettingsTab(QtWidgets.QWidget):
         out_row.addWidget(self.btn_browse)
         form.addRow("Output folder", out_row)
 
-        # --- Run tag
+        # Run tag
         self.edit_run_tag = QtWidgets.QLineEdit("")
         self.edit_run_tag.setPlaceholderText("e.g., road_atlanta_gr3_softs_stint1")
         form.addRow("Run tag", self.edit_run_tag)
 
-        # --- Representation bins
+        # Representation bins
         self.spin_n_bins = QtWidgets.QSpinBox()
         self.spin_n_bins.setRange(100, 2000)
         self.spin_n_bins.setSingleStep(50)
         self.spin_n_bins.setValue(300)
         form.addRow("Distance bins (N)", self.spin_n_bins)
 
-        # --- Feature selection
+        # Feature selection
         feat_group = QtWidgets.QGroupBox("Features exported (X columns)")
         feat_layout = QtWidgets.QGridLayout(feat_group)
 
@@ -67,12 +67,12 @@ class SettingsTab(QtWidgets.QWidget):
 
         layout.addWidget(feat_group)
 
-        # --- Optional normalization (stored in run metadata; you can implement in training later)
+        # Optional normalization (stored in run metadata; you can implement in training later)
         self.chk_normalize = QtWidgets.QCheckBox("Normalize features (recorded for research; apply in training scripts)")
         self.chk_normalize.setChecked(False)
         layout.addWidget(self.chk_normalize)
 
-        # --- Export knobs
+        # Export knobs
         exp_group = QtWidgets.QGroupBox("Export options")
         exp_layout = QtWidgets.QVBoxLayout(exp_group)
 
@@ -96,7 +96,7 @@ class SettingsTab(QtWidgets.QWidget):
 
         layout.addWidget(exp_group)
 
-        # --- UI update rate
+        # UI update rate
         ui_group = QtWidgets.QGroupBox("UI visualization update rate")
         ui_layout = QtWidgets.QHBoxLayout(ui_group)
 
@@ -108,14 +108,14 @@ class SettingsTab(QtWidgets.QWidget):
 
         layout.addWidget(ui_group)
 
-        # --- Session buffer length
+        # Session buffer length
         self.spin_buffer_samples = QtWidgets.QSpinBox()
         self.spin_buffer_samples.setRange(1000, 200000)
         self.spin_buffer_samples.setSingleStep(5000)
         self.spin_buffer_samples.setValue(36000)
         form.addRow("Session buffer (samples)", self.spin_buffer_samples)
 
-        # --- Buttons
+        # Buttons
         btns = QtWidgets.QHBoxLayout()
         layout.addLayout(btns)
 

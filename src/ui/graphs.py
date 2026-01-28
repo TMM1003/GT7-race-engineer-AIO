@@ -1,10 +1,8 @@
 # src/ui/graphs.py
 from __future__ import annotations
-
 from PySide6 import QtWidgets
-import pyqtgraph as pg
-
 from src.core.telemetry_session import TelemetrySession
+import pyqtgraph as pg
 
 
 # Keep colors consistent across all graph views.
