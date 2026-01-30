@@ -21,6 +21,7 @@ class TelemetrySample:
     fuel: float
     fuel_capacity: float
     x: float
+    y: float
     z: float
     in_race: bool
     paused: bool
@@ -570,6 +571,7 @@ class TelemetrySession:
         fuel = float(snap.get("fuel") or 0.0)
         fuel_capacity = float(snap.get("fuel_capacity") or 0.0)
         x = float(snap.get("position_x") or snap.get("x") or 0.0)
+        y = float(snap.get("position_y") or snap.get("y") or 0.0)
         z = float(snap.get("position_z") or snap.get("z") or 0.0)
         in_race = bool(snap.get("in_race") or False)
         paused = bool(snap.get("paused") or False)
@@ -586,6 +588,7 @@ class TelemetrySession:
             fuel=fuel,
             fuel_capacity=fuel_capacity,
             x=x,
+            y=y,
             z=z,
             in_race=in_race,
             paused=paused,

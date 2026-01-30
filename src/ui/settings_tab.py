@@ -12,6 +12,7 @@ class SettingsTab(QtWidgets.QWidget):
     sig_apply = QtCore.Signal(dict)
     sig_start_new_run = QtCore.Signal()
     sig_open_run_dir = QtCore.Signal()
+    sig_export_dataset = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,6 +127,11 @@ class SettingsTab(QtWidgets.QWidget):
         self.btn_new_run = QtWidgets.QPushButton("Start new run")
         self.btn_new_run.clicked.connect(self.sig_start_new_run.emit)
         btns.addWidget(self.btn_new_run)
+
+        self.btn_export_dataset = QtWidgets.QPushButton("Export dataset")
+        self.btn_export_dataset.clicked.connect(self.sig_export_dataset.emit)
+        btns.addWidget(self.btn_export_dataset)
+
 
         self.btn_open_run = QtWidgets.QPushButton("Open run folder")
         self.btn_open_run.clicked.connect(self.sig_open_run_dir.emit)

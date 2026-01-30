@@ -11,21 +11,24 @@ from src.ui.graphs import GraphsWidget, GraphsOverlayWidget
 from src.ui.telemetry_table import TelemetryTableWidget
 from src.ui.corner_table import CornerTableWidget
 from src.ui.settings_tab import SettingsTab
+from src.ui.track_map_3d import TrackMap3DWidget
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    sig_toggle_voice = QtCore.Signal(bool)
     sig_force_ip = QtCore.Signal(str)
-    sig_speak_now = QtCore.Signal()
 
     sig_apply_settings = QtCore.Signal(dict)
     sig_start_new_run = QtCore.Signal()
     sig_open_run_dir = QtCore.Signal()
 
+    sig_export_dataset = QtCore.Signal()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("GT7 Race Engineer")
         self.resize(980, 720)
+
+        self._analysis_n = 300
 
         # Dock behavior: tabbed docks, nested docks, animations
         self.setDockOptions(
@@ -47,7 +50,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.telemetry_table = TelemetryTableWidget()
         self.tabs.addTab(self.telemetry_table, "Telemetry (All Fields)")
 
-
         # Settings / Research tab
         self.settings_tab = SettingsTab()
         self.tabs.addTab(self.settings_tab, "Research/Config")
@@ -56,9 +58,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_tab.sig_apply.connect(self.sig_apply_settings.emit)
         self.settings_tab.sig_start_new_run.connect(self.sig_start_new_run.emit)
         self.settings_tab.sig_open_run_dir.connect(self.sig_open_run_dir.emit)
+        self.settings_tab.sig_export_dataset.connect(self.sig_export_dataset.emit)
 
         # Dockable Panels (map + graphs visible simultaneously / floatable windows)
         self.track_map = TrackMapWidget()
+        self.track_map_3d = TrackMap3DWidget()
         self.graphs = GraphsWidget()
         self.graphs_overlay = GraphsOverlayWidget()
         self.corner_table = CornerTableWidget()
@@ -68,15 +72,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dock_graphs = self._make_dock("Graphs", self.graphs)
         self.dock_graphs_overlay = self._make_dock("Graphs (Overlay)", self.graphs_overlay)
         self.dock_corners = self._make_dock("Corners", self.corner_table)
+        self.dock_track_3d = self._make_dock("Track Map (3D)", self.track_map_3d)
+
+        # OpenGL widgets can lose their context when the dock is floated/docked.
+        # Recover by rebuilding the GLViewWidget after Qt finishes the reparent.
+        self.dock_track_3d.topLevelChanged.connect(self._on_track3d_top_level_changed)
 
         # Add docks to the right area
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_track)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_track_3d)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs_overlay)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_corners)
 
         # Tabify into one dock stack
         self.tabifyDockWidget(self.dock_track, self.dock_graphs)
+        self.tabifyDockWidget(self.dock_track, self.dock_track_3d)
         self.tabifyDockWidget(self.dock_track, self.dock_graphs_overlay)
         self.tabifyDockWidget(self.dock_track, self.dock_corners)
         self.dock_track.raise_()
@@ -134,8 +145,21 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         return dock
 
+    @QtCore.Slot(bool)
+    def _on_track3d_top_level_changed(self, floating: bool) -> None:
+        # Let Qt finish reparenting, then rebuild GL context.
+        QtCore.QTimer.singleShot(50, self.track_map_3d.recover_gl_context)
+
     def set_controller(self, controller):
         self._controller = controller
+
+    def set_analysis_bins(self, n: int) -> None:
+        # defensive: keep it sane
+        try:
+            n = int(n)
+        except Exception:
+            n = 300
+        self._analysis_n = max(50, min(n, 5000))
 
     # Overview UI builder
     def _build_overview_ui(self, parent: QtWidgets.QWidget) -> None:
@@ -183,15 +207,6 @@ class MainWindow(QtWidgets.QMainWindow):
         controls = QtWidgets.QHBoxLayout()
         layout.addLayout(controls)
 
-        self.chk_voice = QtWidgets.QCheckBox("Voice Enabled")
-        self.chk_voice.setChecked(True)
-        self.chk_voice.toggled.connect(self.sig_toggle_voice.emit)
-        controls.addWidget(self.chk_voice)
-
-        self.btn_speak = QtWidgets.QPushButton("Speak Now")
-        self.btn_speak.clicked.connect(self.sig_speak_now.emit)
-        controls.addWidget(self.btn_speak)
-
         controls.addStretch(1)
 
         self.event_log = QtWidgets.QPlainTextEdit()
@@ -227,10 +242,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.val_best.setText(getattr(state, "best_lap_str", "--:--.---"))
 
     def update_visualizations(self, session: TelemetrySession, snap: dict) -> None:
-        self.track_map.update_from_session(session)
+        n = getattr(self, "_analysis_n", 300)
+
+        # Track map (prefer signature update_from_session(session, n=...))
+        try:
+            self.track_map.update_from_session(session, n=n)
+        except TypeError:
+            self.track_map.update_from_session(session)
+
+        # Track map (3D) — optional / safe
+        if hasattr(self, "track_map_3d") and self.track_map_3d is not None:
+            try:
+                self.track_map_3d.update_from_session(session)
+            except Exception:
+                # If something transient occurs, don't spam-crash the app.
+                pass
+
+        # Graphs
         self.graphs.update_from_session(session)
         self.graphs_overlay.update_from_session(session)
-        self.corner_table.update_from_session(session)
+
+        # Corner table (prefer signature update_from_session(session, n=...))
+        try:
+            self.corner_table.update_from_session(session, n=n)
+        except TypeError:
+            self.corner_table.update_from_session(session)
+
+        # Telemetry table (latest snapshot)
         self.telemetry_table.update_from_snapshot(session.latest_snapshot())
 
     def append_event(self, ev) -> None:

@@ -134,7 +134,7 @@ class TrackMapWidget(QtWidgets.QWidget):
         lbl.setStyleSheet(f"font-family: Consolas, monospace; font-weight: {weight};")
         return lbl
 
-    def update_from_session(self, session: TelemetrySession) -> None:
+    def update_from_session(self, session: TelemetrySession, n: int = 300) -> None:
         # session reset handling for visuals
         if self._last_session_id is None:
             self._last_session_id = session.session_id()
@@ -176,12 +176,12 @@ class TrackMapWidget(QtWidgets.QWidget):
             self._set_polyline(self._cur_line, [])
             self._car_dot.setData([], [])
         # sector panel values
-        self._update_sector_panel(session, last, ref)
+        self._update_sector_panel(session, last, ref, n=n)
 
     
     # Sector panel logic
     
-    def _update_sector_panel(self, session: TelemetrySession, last: LapData | None, ref: LapData | None) -> None:
+    def _update_sector_panel(self, session: TelemetrySession, last: LapData | None, ref: LapData | None, n: int = 300) -> None:
         ref_times = session.sector_times_ms(ref) if ref else None
         last_times = session.sector_times_ms(last) if last else None
 
@@ -219,7 +219,7 @@ class TrackMapWidget(QtWidgets.QWidget):
             self._delta_sector_s3.setText(DELTA_PLACEHOLDER)
 
         # Δ checkpoints from distance-aligned time delta profile
-        prof = session.delta_profile_time_ms(last, ref, n=300) if (last and ref) else None
+        prof = session.delta_profile_time_ms(last, ref, n=n) if (last and ref) else None
         if prof:
             d_s1 = _delta_at_fraction(prof, 1.0 / 3.0)
             d_s2 = _delta_at_fraction(prof, 2.0 / 3.0)

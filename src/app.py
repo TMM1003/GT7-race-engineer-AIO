@@ -13,7 +13,6 @@ from src.telemetry.gt7communication import GT7Communication
 from src.core.race_state import RaceState
 from src.core.events import EventEngine
 from src.core.telemetry_session import TelemetrySession
-from src.voice.tts import VoiceEngine
 from src.ui.main_window import MainWindow
 
 # Thesis/research layer (additive). Disable with RESEARCH_ENABLED=0.
@@ -21,12 +20,14 @@ from src.research.config import load_config
 from src.research.registry import create_run
 from src.research.export import export_lap_bundle
 
+from src.research.schema import FeatureSpec
+
+from src.research.dataset import build_and_save_corner_dataset
 
 class AppController(QtCore.QObject):
     def __init__(self):
         super().__init__()
 
-        self.voice = VoiceEngine(enabled=True)
         self.state = RaceState()
         self.events = EventEngine()
 
@@ -61,15 +62,13 @@ class AppController(QtCore.QObject):
         self.window = MainWindow()
         self.window.set_controller(self)
 
-        self.window.sig_toggle_voice.connect(self._on_toggle_voice)
         self.window.sig_apply_settings.connect(self._on_apply_settings)
         self.window.sig_start_new_run.connect(self._on_start_new_run)
         self.window.sig_open_run_dir.connect(self._on_open_run_dir)
-
+        self.window.sig_export_dataset.connect(self._on_export_dataset)
         
         
         self.window.sig_force_ip.connect(self._on_force_ip)
-        self.window.sig_speak_now.connect(self._on_speak_now)
 
         self._timer = QtCore.QTimer(self)
         #self._timer.setInterval(100)  # 10 Hz
@@ -81,9 +80,6 @@ class AppController(QtCore.QObject):
         self._tick_i = 0
         self._viz_div = 5
     
-    @QtCore.Slot(bool)
-    def _on_toggle_voice(self, enabled: bool) -> None:
-        self.voice.enabled = enabled
 
     @QtCore.Slot(str)
     def _on_force_ip(self, ip: str) -> None:
@@ -93,16 +89,11 @@ class AppController(QtCore.QObject):
         self.comm.set_playstation_ip(ip)
         self.comm.restart()
 
-    @QtCore.Slot()
-    def _on_speak_now(self) -> None:
-        snap = self.comm.snapshot()
-        msg = self.state.format_snapshot_for_speech(snap)
-        self.voice.say(msg)
 
     def _tick(self) -> None:
         snap = self.comm.snapshot()
 
-        # existing scalar state (used by voice/events + overview)
+        # existing scalar state (used by events + overview)
         self.state.update(snap)
         self.window.update_state(self.state, snap)
 
@@ -126,16 +117,10 @@ class AppController(QtCore.QObject):
 
         for ev in self.events.consume(self.state):
             self.window.append_event(ev)
-            if self.voice.enabled and ev.should_speak:
-                self.voice.say(ev.speech)
 
     def shutdown(self) -> None:
         try:
             self.comm.stop()
-        except Exception:
-            pass
-        try:
-            self.voice.close()
         except Exception:
             pass
 
@@ -143,21 +128,29 @@ class AppController(QtCore.QObject):
         """Called by TelemetrySession after a lap is finalized (research mode only)."""
         if not self.research_cfg.enabled or self.run is None:
             return
+
+        # UI-selected features override config defaults
+        feats = getattr(self, "_research_features", None) or list(self.research_cfg.features)
+        spec = FeatureSpec(tuple(feats))
+
         try:
             export_lap_bundle(
                 run_dir=self.run.run_dir,
                 session=session,
                 lap=lap,
                 n=self.research_cfg.n_bins,
+                spec=spec,
                 export_npz_if_available=self.research_cfg.export_npz_if_available,
                 export_json_always=self.research_cfg.export_json_always,
-                export_baselines=(
-                    self.research_cfg.export_delta_profile or self.research_cfg.export_corner_rows
-                ),
+                export_baselines=(self.research_cfg.export_delta_profile or self.research_cfg.export_corner_rows),
+                export_corners=self.research_cfg.export_corners,
             )
         except Exception as e:
-            # Never allow export failures to impact driving session.
             print("Research export error:", repr(e))
+
+
+
+
     @QtCore.Slot(dict)
     def _on_apply_settings(self, s: dict) -> None:
         # 1) UI update rate (visualizations only; keep sampling at ~60 Hz)
@@ -248,6 +241,31 @@ class AppController(QtCore.QObject):
                 subprocess.Popen(["xdg-open", path])
         except Exception as e:
             print("Open run folder error:", repr(e))
+
+    def _on_export_dataset(self) -> None:
+        if self.run is None:
+            print("No active run; cannot export dataset.")
+            return
+
+        try:
+            track_name = None
+            # best-effort: pull from run metadata if available
+            if hasattr(self.run, "meta") and isinstance(self.run.meta, dict):
+                track_name = self.run.meta.get("track_name")
+
+            paths, report = build_and_save_corner_dataset(
+                self.run.run_dir,
+                track_name=track_name,
+            )
+
+            print("Dataset export complete:")
+            print("  CSV:", paths.get("csv"))
+            if paths.get("parquet"):
+                print("  Parquet:", paths.get("parquet"))
+            print("  Rows:", report.rows_emitted)
+
+        except Exception as e:
+            print("Dataset export error:", repr(e))
 
 
 def main():

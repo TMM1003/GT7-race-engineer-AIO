@@ -19,6 +19,62 @@ def _safe_write_json(path: Path, obj: Any) -> None:
     with path.open("w", encoding="utf-8") as f:
         json.dump(obj, f, indent=2, sort_keys=True)
 
+def _export_corner_tensors(
+    corners_dir: Path,
+    lap_num: int,
+    X_lap: List[List[float]],
+    meta: Dict[str, Any],
+    corner_rows: Optional[List[Dict[str, Any]]],
+    export_npz_if_available: bool,
+    export_json_always: bool,
+) -> None:
+    if not corner_rows:
+        return
+
+    corners_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, r in enumerate(corner_rows, start=1):
+        seg = r.get("seg")
+        if not seg:
+            continue
+
+        s = int(seg["start_idx"])
+        e = int(seg["end_idx"])
+        if e <= s or s < 0 or e > len(X_lap):
+            continue
+
+        Xc = X_lap[s:e]
+        cmeta = dict(meta)
+        cmeta.update({
+            "corner_index": i,
+            "corner_start_idx": s,
+            "corner_end_idx": e,
+            "corner_direction": seg.get("direction"),
+            "corner_strength": seg.get("strength"),
+            "loss_ms": r.get("loss_ms"),
+            "brake_start_delta_m": r.get("brake_start_delta_m"),
+            "throttle_on_delta_m": r.get("throttle_on_delta_m"),
+            "min_speed_delta_kmh": r.get("min_speed_delta_kmh"),
+            "exit_speed_delta_kmh": r.get("exit_speed_delta_kmh"),
+        })
+
+        # JSON
+        if export_json_always:
+            _safe_write_json(
+                corners_dir / f"corner_{lap_num:04d}_{i:02d}.json",
+                {"X": Xc, "meta": cmeta},
+            )
+
+        # NPZ
+        if export_npz_if_available and _np is not None:
+            arr = _np.array(Xc, dtype=_np.float32)
+            meta_str = json.dumps(cmeta, sort_keys=True)
+            _np.savez_compressed(
+                corners_dir / f"corner_{lap_num:04d}_{i:02d}.npz",
+                X=arr,
+                meta_json=meta_str,
+            )
+
 
 def _lap_baselines(
     session: TelemetrySession,
@@ -82,6 +138,7 @@ def export_lap_bundle(
     export_npz_if_available: bool = True,
     export_json_always: bool = True,
     export_baselines: bool = True,
+    export_corners: bool = True,
 ) -> Tuple[Path, Optional[Path], Optional[Path]]:
     """
     Exports a single lap as:
@@ -112,10 +169,24 @@ def export_lap_bundle(
         meta_str = json.dumps(meta, sort_keys=True)
         _np.savez_compressed(npz_path, X=arr, meta_json=meta_str)
 
+    baseline = None
     if export_baselines:
         ref = session.reference_lap()
         baseline = _lap_baselines(session, lap, ref, n=n)
         baseline_path = base_dir / f"lap_{lap.lap_num:04d}_vs_ref.json"
         _safe_write_json(baseline_path, baseline)
+
+    # NEW: export corner tensors based on baseline corner segments
+    if export_corners and baseline is not None:
+        corners_dir = run_dir / "corners"
+        _export_corner_tensors(
+            corners_dir=corners_dir,
+            lap_num=lap.lap_num,
+            X_lap=X,
+            meta=meta,
+            corner_rows=baseline.get("corner_rows"),
+            export_npz_if_available=export_npz_if_available,
+            export_json_always=export_json_always,
+        )
 
     return json_path, npz_path, baseline_path

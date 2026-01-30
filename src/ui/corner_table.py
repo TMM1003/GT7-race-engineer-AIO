@@ -45,7 +45,7 @@ class CornerTableWidget(QtWidgets.QWidget):
     def clear(self) -> None:
         self.table.setRowCount(0)
 
-    def update_from_session(self, session: TelemetrySession) -> None:
+    def update_from_session(self, session: TelemetrySession, n: int = 300) -> None:
         laps = session.completed_laps()
         if len(laps) < 2:
             self.clear()
@@ -65,7 +65,7 @@ class CornerTableWidget(QtWidgets.QWidget):
             self.clear()
             return
 
-        rows = session.corner_coaching_rows(last, ref, n=300)
+        rows = session.corner_coaching_rows(last, ref, n=n)
         if rows is None:
             self.clear()
             return
@@ -88,8 +88,10 @@ class CornerTableWidget(QtWidgets.QWidget):
             seg: CornerSegment = row["seg"]
             loss_ms: float = float(row["loss_ms"])
 
-            start_pct = 100.0 * (seg.start_idx / 299.0)
-            end_pct = 100.0 * (seg.end_idx / 299.0)
+            den = float(max(1, n - 1))
+            start_pct = 100.0 * (seg.start_idx / den)
+            end_pct = 100.0 * (seg.end_idx / den)
+
 
             if seg.direction > 0:
                 d = "R"
