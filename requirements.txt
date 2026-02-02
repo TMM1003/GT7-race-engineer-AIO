@@ -5,3 +5,4 @@ PyOpenGL>=3.1.7
 PyOpenGL_accelerate>=3.1.7
 pandas>=2.0
 pyarrow>=12.0
+pyinstaller>=6.18.0
