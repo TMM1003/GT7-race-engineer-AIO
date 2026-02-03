@@ -30,7 +30,6 @@ from sklearn.inspection import permutation_importance
 NON_FEATURE_COLS = {
     "loss_ms",
     "run_id",
-    "run_tag",
     "track_name",
     "corner_uid",
     "corner_direction",  # non-numeric categorical; keep out for now unless you one-hot later

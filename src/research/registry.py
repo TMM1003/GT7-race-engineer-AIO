@@ -63,7 +63,12 @@ class RunRegistry:
     meta: Dict[str, Any]
 
 
-def create_run(output_root: str, run_tag: Optional[str] = None, extra_meta: Optional[Dict[str, Any]] = None) -> RunRegistry:
+def create_run(
+    output_root: str,
+    run_alias: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    extra_meta: Optional[Dict[str, Any]] = None,
+) -> RunRegistry:
     """
     Creates:
       <output_root>/<run_id>/
@@ -75,12 +80,25 @@ def create_run(output_root: str, run_tag: Optional[str] = None, extra_meta: Opti
 
     Folder naming scheme:
       <run_alias-or-run_tag-or-run>__YYYYMMDD_HHMMSS[__NN]
+
+    Compatibility:
+      - Older callers may still pass run_tag and/or extra_meta.
+      - Newer callers should pass run_alias + metadata.
     """
     root = Path(output_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    extra_meta = dict(extra_meta or {})
-    run_alias = extra_meta.get("run_alias")
+    # Merge metadata sources in a stable precedence order.
+    # Highest priority: metadata (new API), then extra_meta (legacy API).
+    merged_meta: Dict[str, Any] = {}
+    if extra_meta:
+        merged_meta.update(dict(extra_meta))
+    if metadata:
+        merged_meta.update(dict(metadata))
+
+    # If run_alias not provided explicitly, allow it to be derived from merged metadata.
+    if run_alias is None:
+        run_alias = merged_meta.get("run_alias")
 
     desired_run_id = _make_run_id(run_alias=run_alias, run_tag=run_tag)
     run_dir = _ensure_unique_dir(root, desired_run_id)
@@ -96,7 +114,7 @@ def create_run(output_root: str, run_tag: Optional[str] = None, extra_meta: Opti
     meta: Dict[str, Any] = {
         "run_id": run_id,
         "created_utc": _utc_iso(),
-        "run_tag": run_tag,
+        "run_alias": run_alias,
         "git_commit": _git_commit_short(),
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -112,8 +130,8 @@ def create_run(output_root: str, run_tag: Optional[str] = None, extra_meta: Opti
         "reference_lap_time_ms": None,
     }
 
-    # Overlay any additional metadata (track/car/alias/notes/feature_spec/schema version/hash/etc.)
-    meta.update(extra_meta)
+    # Overlay merged metadata (track/car/notes/feature_spec/schema version/hash/etc.)
+    meta.update(merged_meta)
 
     with (run_dir / "run.json").open("w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, sort_keys=True)

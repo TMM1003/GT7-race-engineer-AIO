@@ -43,13 +43,6 @@ class SettingsTab(QtWidgets.QWidget):
         out_row.addWidget(self.btn_browse)
         form.addRow("Output folder", out_row)
 
-        self.edit_run_tag = QtWidgets.QLineEdit("")
-        self.edit_run_tag.setPlaceholderText("Experiment tag (optional)")
-        self.edit_run_tag.setToolTip(
-            "Optional grouping label for runs (e.g., 'baseline_week1'). "
-            "Does not change the run folder name."
-        )
-        form.addRow("Run tag", self.edit_run_tag)
 
         self.spin_n_bins = QtWidgets.QSpinBox()
         self.spin_n_bins.setRange(100, 2000)
@@ -250,7 +243,6 @@ class SettingsTab(QtWidgets.QWidget):
         settings = {
             "research_enabled": self.chk_research_enabled.isChecked(),
             "output_root": self.edit_output_root.text().strip() or "data/runs",
-            "run_tag": self.edit_run_tag.text().strip() or None,
             "n_bins": int(self.spin_n_bins.value()),
             "features": features,
             "normalize": bool(self.chk_normalize.isChecked()),

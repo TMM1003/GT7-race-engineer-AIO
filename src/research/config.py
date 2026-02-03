@@ -45,7 +45,6 @@ class ResearchConfig:
     export_delta_profile: bool = True
     export_corner_rows: bool = True
 
-    run_tag: Optional[str] = None
 
 def load_config() -> ResearchConfig:
     return ResearchConfig(
@@ -64,5 +63,4 @@ def load_config() -> ResearchConfig:
         export_corners=_env_bool("RESEARCH_EXPORT_CORNERS", True),
         export_delta_profile=_env_bool("RESEARCH_EXPORT_DELTA_PROFILE", True),
         export_corner_rows=_env_bool("RESEARCH_EXPORT_CORNER_ROWS", True),
-        run_tag=(os.getenv("RESEARCH_RUN_TAG", "").strip() or None),
     )

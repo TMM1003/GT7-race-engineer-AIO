@@ -8,6 +8,7 @@ import time
 
 from dataclasses import replace
 from pathlib import Path
+from typing import Optional
 
 from PySide6 import QtCore, QtWidgets
 
@@ -45,7 +46,12 @@ class AppController(QtCore.QObject):
         self.session = TelemetrySession(max_samples=36000)
 
         self.research_cfg = load_config()
+
+        # No run should exist at app startup
         self.run = None
+
+        # Do not attach lap-finalize callback until research is enabled
+        self.session.on_lap_finalized = None
 
         self._run_meta = {
             "track_name": None,
@@ -58,14 +64,6 @@ class AppController(QtCore.QObject):
         self._research_normalize = False
         self._tick_i = 0
         self._viz_div = 5
-
-        if self.research_cfg.enabled:
-            self.run = create_run(
-                output_root=self.research_cfg.output_root,
-                run_tag=self.research_cfg.run_tag,
-                extra_meta=self._build_run_extra_meta(),
-            )
-            self.session.on_lap_finalized = self._on_lap_finalized
 
         ps_ip = os.getenv("GT7_PLAYSTATION_IP", "").strip() or None
         self.comm = GT7Communication(playstation_ip=ps_ip)
@@ -105,6 +103,8 @@ class AppController(QtCore.QObject):
 
     def _tick(self) -> None:
         snap = self.comm.snapshot()
+        if not snap or not snap.get("in_race"):
+            return
 
         self.state.update(snap)
         self.window.update_state(self.state, snap)
@@ -133,6 +133,13 @@ class AppController(QtCore.QObject):
         except Exception:
             pass
 
+    def _telemetry_live(self) -> bool:
+        # Strongest available signal: we are in-race and receiving valid packets
+        try:
+            return bool(getattr(self.state, "in_race", False))
+        except Exception:
+            return False
+
     def _feature_spec_snapshot(self) -> dict:
         feats = list(self._research_features or list(self.research_cfg.features))
         return {
@@ -151,7 +158,7 @@ class AppController(QtCore.QObject):
 
         return {
             "sampling_hz_source_confirmed": 60,
-            "n_bins": self.research_cfg.n_bins,
+            "n_bins": int(self.research_cfg.n_bins),
             "features": list(spec.features),
             "normalize": bool(self._research_normalize),
             "schema_version": int(SCHEMA_VERSION),
@@ -170,11 +177,22 @@ class AppController(QtCore.QObject):
         }
 
     def _create_new_run(self) -> None:
+        # Create the run directory lazily and immediately stamp metadata
         self.run = create_run(
             output_root=self.research_cfg.output_root,
-            run_tag=self.research_cfg.run_tag,
-            extra_meta=self._build_run_extra_meta(),
+            run_alias=self._run_meta.get("run_alias"),
+            metadata=self._run_meta,
         )
+
+        # Arm lap finalization callback only once a run exists
+        self.session.on_lap_finalized = self._on_lap_finalized
+
+        # Stamp extended run metadata right away (schema, features, buffer, reference, etc.)
+        try:
+            self._patch_run_json(Path(self.run.run_dir), self._build_run_extra_meta())
+        except Exception:
+            pass
+
         self._refresh_run_meta_ui()
 
     def _patch_run_json(self, run_dir: Path, patch: dict) -> None:
@@ -195,8 +213,12 @@ class AppController(QtCore.QObject):
         _safe_write_json(mpath, data)
 
     def _on_lap_finalized(self, lap, session) -> None:
-        if not self.research_cfg.enabled or self.run is None:
+        if not self.research_cfg.enabled:
             return
+
+        # Lazy run creation at first finalized lap
+        if self.run is None:
+            self._create_new_run()
 
         feats = list(self._research_features or list(self.research_cfg.features))
         spec = FeatureSpec(tuple(feats))
@@ -206,12 +228,12 @@ class AppController(QtCore.QObject):
                 run_dir=self.run.run_dir,
                 session=session,
                 lap=lap,
-                n=self.research_cfg.n_bins,
+                n=int(self.research_cfg.n_bins),
                 spec=spec,
-                export_npz_if_available=self.research_cfg.export_npz_if_available,
-                export_json_always=self.research_cfg.export_json_always,
-                export_baselines=(self.research_cfg.export_delta_profile or self.research_cfg.export_corner_rows),
-                export_corners=self.research_cfg.export_corners,
+                export_npz_if_available=bool(self.research_cfg.export_npz_if_available),
+                export_json_always=bool(self.research_cfg.export_json_always),
+                export_baselines=(bool(self.research_cfg.export_delta_profile) or bool(self.research_cfg.export_corner_rows)),
+                export_corners=bool(self.research_cfg.export_corners),
             )
 
             # Keep run.json aligned with current reference state
@@ -239,7 +261,10 @@ class AppController(QtCore.QObject):
             old_cb = getattr(self.session, "on_lap_finalized", None)
             locked = self.session.reference_locked()
             ref = self.session.reference_info().get("lap_num")
+
             self.session = TelemetrySession(max_samples=new_buf)
+
+            # Preserve callback and reference behavior through session rebuild
             self.session.on_lap_finalized = old_cb
             if ref is not None:
                 self.session.set_reference_by_lap_num(int(ref))
@@ -247,6 +272,7 @@ class AppController(QtCore.QObject):
 
         enabled = bool(s.get("research_enabled", True))
 
+        # run_tag is deprecated. Do not accept or store it.
         self.research_cfg = replace(
             self.research_cfg,
             enabled=enabled,
@@ -257,19 +283,23 @@ class AppController(QtCore.QObject):
             export_corners=bool(s.get("export_corners", True)),
             export_delta_profile=bool(s.get("export_delta_profile", True)),
             export_corner_rows=bool(s.get("export_corner_rows", True)),
-            run_tag=s.get("run_tag", None),
         )
 
         self._research_features = list(s.get("features", []))
         self._research_normalize = bool(s.get("normalize", False))
 
         if self.research_cfg.enabled:
+            # Arm exports, but do NOT create a run here
             self.session.on_lap_finalized = self._on_lap_finalized
-            if self.run is None:
-                self._create_new_run()
-            else:
-                self._patch_run_json(Path(self.run.run_dir), self._build_run_extra_meta())
+
+            # If a run already exists, keep metadata aligned
+            if self.run is not None:
+                try:
+                    self._patch_run_json(Path(self.run.run_dir), self._build_run_extra_meta())
+                except Exception:
+                    pass
         else:
+            # Disarm research behavior and drop current run pointer
             self.run = None
             self.session.on_lap_finalized = None
 
@@ -280,12 +310,23 @@ class AppController(QtCore.QObject):
     def _on_start_new_run(self) -> None:
         if not self.research_cfg.enabled:
             return
+
+        # Avoid creating empty runs from menus or pre-race screens
+        if not self._telemetry_live():
+            QtWidgets.QMessageBox.information(
+                self.window,
+                "Not connected",
+                "Start a run only after GT7 telemetry is live (in-race).",
+            )
+            return
+
         self._create_new_run()
 
     @QtCore.Slot()
     def _on_open_run_dir(self) -> None:
         if self.run is None:
             return
+
         path = str(self.run.run_dir)
         try:
             if sys.platform.startswith("win"):
@@ -306,7 +347,6 @@ class AppController(QtCore.QObject):
         try:
             paths, report = build_and_save_corner_dataset(self.run.run_dir)
 
-            # Update manifest with dataset build
             entry = {
                 "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "paths": {
@@ -389,10 +429,20 @@ class AppController(QtCore.QObject):
     @QtCore.Slot(dict)
     def _on_start_new_run_with_meta(self, meta: dict) -> None:
         self._run_meta.update(meta or {})
+
         if not self.research_cfg.enabled:
             return
 
-        # In research mode, missing track/car means your data becomes hard to use later
+        # Avoid creating empty runs from menus or pre-race screens
+        if not self._telemetry_live():
+            QtWidgets.QMessageBox.information(
+                self.window,
+                "Not connected",
+                "Start a run only after GT7 telemetry is live (in-race).",
+            )
+            return
+
+        # Track/car required for research usability
         track = (self._run_meta.get("track_name") or "").strip()
         car = (self._run_meta.get("car_name") or "").strip()
         if not track or not car:

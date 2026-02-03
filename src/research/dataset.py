@@ -308,7 +308,6 @@ def build_corner_dataset(
 
         row: Dict[str, Any] = {
             "run_id": run_meta.get("run_id") or meta.get("run_id"),
-            "run_tag": run_meta.get("run_tag") or meta.get("run_tag"),
             "run_alias": run_meta.get("run_alias"),
             "track_name": tn,
             "car_name": run_meta.get("car_name"),
@@ -365,7 +364,7 @@ def build_corner_dataset(
 
         # Deterministic column order (stable)
         preferred = [
-            "run_id", "run_tag", "run_alias", "track_name", "car_name", "notes",
+            "run_id", "run_alias", "track_name", "car_name", "notes",
             "schema_version", "schema_hash",
             "reference_locked", "reference_lap_num",
             "lap_num", "corner_index", "corner_uid", "corner_direction", "corner_strength",
