@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 import math
+import hashlib
+import json
 
 # We intentionally import the internal resampling helpers you already use for baselines.
 from src.core.telemetry_session import (
@@ -12,6 +14,9 @@ from src.core.telemetry_session import (
     _resample_by_distance,
     _resample_series_by_distance,
 )
+
+# Dataset schema version for thesis reproducibility
+SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,22 @@ class FeatureSpec:
 
     def index(self, name: str) -> int:
         return self.features.index(name)
+
+
+def schema_hash(*, spec: FeatureSpec, normalize: bool, n_bins: int, extra: Dict[str, Any] | None = None) -> str:
+    """
+    Stable hash describing the exported tensor meaning.
+    If any of these change, training artifacts must not be mixed.
+    """
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "features": list(spec.features),
+        "normalize": bool(normalize),
+        "n_bins": int(n_bins),
+        "extra": extra or {},
+    }
+    b = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(b).hexdigest()[:16]
 
 
 def _wrap_pi(a: float) -> float:
@@ -88,10 +109,8 @@ def build_lap_tensor(
         }
         return X, meta
 
-    # Mirror your session logic: filter out invalid points
     aligned_samples = [s for s in lap.samples if (abs(getattr(s, "x", 0.0)) > 1e-6 or abs(getattr(s, "z", 0.0)) > 1e-6)]
 
-    # Defensive mismatch handling
     cum = lap.cum_dist_m
     L = min(len(aligned_samples), len(cum))
     aligned_samples = aligned_samples[:L]
@@ -109,26 +128,26 @@ def build_lap_tensor(
         return X, meta
 
     speed = [float(getattr(s, "speed_kmh", 0.0)) for s in aligned_samples]
-    thr   = [float(getattr(s, "throttle", 0.0)) for s in aligned_samples]
-    brk   = [float(getattr(s, "brake", 0.0)) for s in aligned_samples]
-    rpm   = [float(getattr(s, "rpm", 0.0)) for s in aligned_samples]
-    gear  = [float(getattr(s, "gear", 0.0)) for s in aligned_samples]
+    thr = [float(getattr(s, "throttle", 0.0)) for s in aligned_samples]
+    brk = [float(getattr(s, "brake", 0.0)) for s in aligned_samples]
+    rpm = [float(getattr(s, "rpm", 0.0)) for s in aligned_samples]
+    gear = [float(getattr(s, "gear", 0.0)) for s in aligned_samples]
 
     speed_r = _resample_series_by_distance(speed, cum, n=n)
-    thr_r   = _resample_series_by_distance(thr,   cum, n=n)
-    brk_r   = _resample_series_by_distance(brk,   cum, n=n)
-    rpm_r   = _resample_series_by_distance(rpm,   cum, n=n)
-    gear_r  = _resample_series_by_distance(gear,  cum, n=n)
+    thr_r = _resample_series_by_distance(thr, cum, n=n)
+    brk_r = _resample_series_by_distance(brk, cum, n=n)
+    rpm_r = _resample_series_by_distance(rpm, cum, n=n)
+    gear_r = _resample_series_by_distance(gear, cum, n=n)
 
     pts_r = _resample_by_distance(lap.points_xz, lap.cum_dist_m, n=n) if getattr(lap, "points_xz", None) else []
     curv_r = _curvature_proxy(pts_r) if pts_r else [0.0] * n
 
     series_map: Dict[str, List[float]] = {
         "speed_kmh": speed_r,
-        "throttle":  thr_r,
-        "brake":     brk_r,
-        "rpm":       rpm_r,
-        "gear":      gear_r,
+        "throttle": thr_r,
+        "brake": brk_r,
+        "rpm": rpm_r,
+        "gear": gear_r,
         "curvature": curv_r,
     }
 
@@ -140,6 +159,7 @@ def build_lap_tensor(
             row.append(float(arr[i]) if arr and i < len(arr) else 0.0)
         X.append(row)
 
+    ref = session.reference_lap()
     meta: Dict[str, Any] = {
         "ok": True,
         "lap_num": int(getattr(lap, "lap_num", 0)),
@@ -148,6 +168,6 @@ def build_lap_tensor(
         "n": n,
         "features": list(spec.features),
         "session_id": int(session.session_id()),
-        "reference_lap_num": (session.reference_lap().lap_num if session.reference_lap() else None),
+        "reference_lap_num": (ref.lap_num if ref else None),
     }
     return X, meta

@@ -20,8 +20,14 @@ class MainWindow(QtWidgets.QMainWindow):
     sig_apply_settings = QtCore.Signal(dict)
     sig_start_new_run = QtCore.Signal()
     sig_open_run_dir = QtCore.Signal()
-
     sig_export_dataset = QtCore.Signal()
+
+    sig_apply_run_metadata = QtCore.Signal(dict)
+    sig_start_new_run_with_meta = QtCore.Signal(dict)
+
+    # Reference controls
+    sig_set_reference_best = QtCore.Signal()
+    sig_toggle_reference_lock = QtCore.Signal(bool)
 
     def __init__(self):
         super().__init__()
@@ -30,75 +36,67 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._analysis_n = 300
 
-        # Dock behavior: tabbed docks, nested docks, animations
         self.setDockOptions(
             QtWidgets.QMainWindow.DockOption.AllowTabbedDocks
             | QtWidgets.QMainWindow.DockOption.AllowNestedDocks
             | QtWidgets.QMainWindow.DockOption.AnimatedDocks
         )
 
-        # Central Tabs
         self.tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self.tabs)
 
-        # Overview tab
         self.overview = QtWidgets.QWidget()
         self.tabs.addTab(self.overview, "Overview")
         self._build_overview_ui(self.overview)
 
-        # Telemetry table stays as a normal tab
         self.telemetry_table = TelemetryTableWidget()
         self.tabs.addTab(self.telemetry_table, "Telemetry (All Fields)")
 
-        # Settings / Research tab
         self.settings_tab = SettingsTab()
         self.tabs.addTab(self.settings_tab, "Research/Config")
 
-        # forward signals
         self.settings_tab.sig_apply.connect(self.sig_apply_settings.emit)
         self.settings_tab.sig_start_new_run.connect(self.sig_start_new_run.emit)
         self.settings_tab.sig_open_run_dir.connect(self.sig_open_run_dir.emit)
         self.settings_tab.sig_export_dataset.connect(self.sig_export_dataset.emit)
 
-        # Dockable Panels (map + graphs visible simultaneously / floatable windows)
+        self.settings_tab.sig_apply_run_metadata.connect(self.sig_apply_run_metadata.emit)
+        self.settings_tab.sig_start_new_run_with_meta.connect(self.sig_start_new_run_with_meta.emit)
+
+        self.settings_tab.sig_set_reference_best.connect(self.sig_set_reference_best.emit)
+        self.settings_tab.sig_toggle_reference_lock.connect(self.sig_toggle_reference_lock.emit)
+
         self.track_map = TrackMapWidget()
         self.track_map_3d = TrackMap3DWidget()
         self.graphs = GraphsWidget()
         self.graphs_overlay = GraphsOverlayWidget()
         self.corner_table = CornerTableWidget()
 
-        # IMPORTANT: standardize dock attribute names
         self.dock_track = self._make_dock("Track Map", self.track_map)
         self.dock_graphs = self._make_dock("Graphs", self.graphs)
         self.dock_graphs_overlay = self._make_dock("Graphs (Overlay)", self.graphs_overlay)
         self.dock_corners = self._make_dock("Corners", self.corner_table)
         self.dock_track_3d = self._make_dock("Track Map (3D)", self.track_map_3d)
 
-        # OpenGL widgets can lose their context when the dock is floated/docked.
-        # Recover by rebuilding the GLViewWidget after Qt finishes the reparent.
         self.dock_track_3d.topLevelChanged.connect(self._on_track3d_top_level_changed)
 
-        # Add docks to the right area
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_track)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_track_3d)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs_overlay)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_corners)
 
-        # Tabify into one dock stack
         self.tabifyDockWidget(self.dock_track, self.dock_graphs)
         self.tabifyDockWidget(self.dock_track, self.dock_track_3d)
         self.tabifyDockWidget(self.dock_track, self.dock_graphs_overlay)
         self.tabifyDockWidget(self.dock_track, self.dock_corners)
         self.dock_track.raise_()
 
-        # Optional: size docks
         try:
             self.resizeDocks([self.dock_track], [380], QtCore.Qt.Horizontal)
         except Exception:
             pass
 
-        # Theme preference + menu
         self._settings = QtCore.QSettings("GT7RaceEngineer", "GT7RaceEngineerApp")
         theme_default = self._settings.value("ui/theme", "studio_gray", type=str)
 
@@ -147,21 +145,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot(bool)
     def _on_track3d_top_level_changed(self, floating: bool) -> None:
-        # Let Qt finish reparenting, then rebuild GL context.
         QtCore.QTimer.singleShot(50, self.track_map_3d.recover_gl_context)
 
     def set_controller(self, controller):
         self._controller = controller
 
     def set_analysis_bins(self, n: int) -> None:
-        # defensive: keep it sane
         try:
             n = int(n)
         except Exception:
             n = 300
         self._analysis_n = max(50, min(n, 5000))
 
-    # Overview UI builder
+    def set_current_run_info(self, *, run_id: str | None, run_dir: str | None,
+                             track_name: str | None, car_name: str | None, run_alias: str | None) -> None:
+        self.settings_tab.set_current_run_info(
+            run_id=run_id,
+            run_dir=run_dir,
+            track_name=track_name,
+            car_name=car_name,
+            run_alias=run_alias,
+        )
+
+    def set_reference_info(self, *, lap_num: int | None, lap_time_ms: int | None, locked: bool) -> None:
+        self.settings_tab.set_reference_info(lap_num=lap_num, lap_time_ms=lap_time_ms, locked=locked)
+
+    def set_qa_summary(self, text: str) -> None:
+        self.settings_tab.set_qa_summary(text)
+
     def _build_overview_ui(self, parent: QtWidgets.QWidget) -> None:
         layout = QtWidgets.QVBoxLayout(parent)
 
@@ -217,7 +228,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _emit_set_ip(self):
         self.sig_force_ip.emit(self.ip_edit.text())
 
-    # Existing behavior
     def update_state(self, state: RaceState, snap: dict) -> None:
         if state.connected:
             self.lbl_status.setText("● CONNECTED")
@@ -244,31 +254,25 @@ class MainWindow(QtWidgets.QMainWindow):
     def update_visualizations(self, session: TelemetrySession, snap: dict) -> None:
         n = getattr(self, "_analysis_n", 300)
 
-        # Track map (prefer signature update_from_session(session, n=...))
         try:
             self.track_map.update_from_session(session, n=n)
         except TypeError:
             self.track_map.update_from_session(session)
 
-        # Track map (3D) — optional / safe
         if hasattr(self, "track_map_3d") and self.track_map_3d is not None:
             try:
                 self.track_map_3d.update_from_session(session)
             except Exception:
-                # If something transient occurs, don't spam-crash the app.
                 pass
 
-        # Graphs
         self.graphs.update_from_session(session)
         self.graphs_overlay.update_from_session(session)
 
-        # Corner table (prefer signature update_from_session(session, n=...))
         try:
             self.corner_table.update_from_session(session, n=n)
         except TypeError:
             self.corner_table.update_from_session(session)
 
-        # Telemetry table (latest snapshot)
         self.telemetry_table.update_from_snapshot(session.latest_snapshot())
 
     def append_event(self, ev) -> None:
@@ -332,7 +336,6 @@ class MainWindow(QtWidgets.QMainWindow):
             app.setStyleSheet("QToolTip { color: #ffffff; background-color: #2b2b2b; border: 1px solid #555; }")
 
         else:
-            # Studio Gray
             p.setColor(QtGui.QPalette.Window, QtGui.QColor(53, 53, 53))
             p.setColor(QtGui.QPalette.WindowText, QtGui.QColor(230, 230, 230))
             p.setColor(QtGui.QPalette.Base, QtGui.QColor(42, 42, 42))

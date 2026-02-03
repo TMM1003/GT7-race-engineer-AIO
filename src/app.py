@@ -3,6 +3,8 @@ import os
 import sys
 import subprocess
 import platform
+import json
+import time
 
 from dataclasses import replace
 from pathlib import Path
@@ -15,14 +17,23 @@ from src.core.events import EventEngine
 from src.core.telemetry_session import TelemetrySession
 from src.ui.main_window import MainWindow
 
-# Thesis/research layer (additive). Disable with RESEARCH_ENABLED=0.
 from src.research.config import load_config
 from src.research.registry import create_run
 from src.research.export import export_lap_bundle
-
-from src.research.schema import FeatureSpec
-
+from src.research.schema import FeatureSpec, SCHEMA_VERSION, schema_hash
 from src.research.dataset import build_and_save_corner_dataset
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _safe_write_json(path: Path, obj: dict) -> None:
+    path.write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+
 
 class AppController(QtCore.QObject):
     def __init__(self):
@@ -31,28 +42,29 @@ class AppController(QtCore.QObject):
         self.state = RaceState()
         self.events = EventEngine()
 
-        #Telemetry history for plots/map/table
-        #self.session = TelemetrySession(max_samples=6000)
-
-        # Telemetry history for plots/map/table
-        # NOTE: sampling rate is controlled by the Qt timer; you confirmed GT7 is 60 Hz.
-        # We keep the UI responsive by throttling visualization redraws.
         self.session = TelemetrySession(max_samples=36000)
 
-        # Thesis/research integration (additive): dataset export + reproducible run registry
         self.research_cfg = load_config()
         self.run = None
+
+        self._run_meta = {
+            "track_name": None,
+            "car_name": None,
+            "run_alias": None,
+            "notes": None,
+        }
+
+        self._research_features = list(self.research_cfg.features)
+        self._research_normalize = False
+        self._tick_i = 0
+        self._viz_div = 5
+
         if self.research_cfg.enabled:
             self.run = create_run(
                 output_root=self.research_cfg.output_root,
                 run_tag=self.research_cfg.run_tag,
-                extra_meta={
-                    "sampling_hz_source_confirmed": 60,
-                    "n_bins": self.research_cfg.n_bins,
-                },
+                extra_meta=self._build_run_extra_meta(),
             )
-
-            # Export each finalized lap automatically
             self.session.on_lap_finalized = self._on_lap_finalized
 
         ps_ip = os.getenv("GT7_PLAYSTATION_IP", "").strip() or None
@@ -66,20 +78,22 @@ class AppController(QtCore.QObject):
         self.window.sig_start_new_run.connect(self._on_start_new_run)
         self.window.sig_open_run_dir.connect(self._on_open_run_dir)
         self.window.sig_export_dataset.connect(self._on_export_dataset)
-        
-        
+
+        self.window.sig_apply_run_metadata.connect(self._on_apply_run_metadata)
+        self.window.sig_start_new_run_with_meta.connect(self._on_start_new_run_with_meta)
+
+        self.window.sig_set_reference_best.connect(self._on_set_reference_best)
+        self.window.sig_toggle_reference_lock.connect(self._on_toggle_reference_lock)
+
         self.window.sig_force_ip.connect(self._on_force_ip)
 
         self._timer = QtCore.QTimer(self)
-        #self._timer.setInterval(100)  # 10 Hz
-        self._timer.setInterval(16)  # 60 Hz
+        self._timer.setInterval(16)
         self._timer.timeout.connect(self._tick)
         self._timer.start()
 
-        # Visualization throttling (render at ~12 Hz by default)
-        self._tick_i = 0
-        self._viz_div = 5
-    
+        self._refresh_run_meta_ui()
+        self._refresh_reference_ui()
 
     @QtCore.Slot(str)
     def _on_force_ip(self, ip: str) -> None:
@@ -89,34 +103,29 @@ class AppController(QtCore.QObject):
         self.comm.set_playstation_ip(ip)
         self.comm.restart()
 
-
     def _tick(self) -> None:
         snap = self.comm.snapshot()
 
-        # existing scalar state (used by events + overview)
         self.state.update(snap)
         self.window.update_state(self.state, snap)
 
-        # history/session for visualizations + thesis export (60 Hz collection)
         self.session.update_from_snapshot(snap)
 
-        # Throttle expensive redraws (keep UI responsive while sampling at ~60 Hz)
-        # Ensure these are set in __init__:
-        #   self._tick_i = 0
-        #   self._viz_div = 5   # ~12 Hz if timer interval ~16 ms
         self._tick_i = getattr(self, "_tick_i", 0) + 1
         self._viz_div = getattr(self, "_viz_div", 5)
 
         if (self._tick_i % self._viz_div) == 0:
-            # Prevent one missing method / plot error from hard-looping every tick
             try:
                 self.window.update_visualizations(self.session, snap)
             except Exception as e:
-                # If you want, replace print with logging later
                 print("Visualization error:", repr(e))
 
         for ev in self.events.consume(self.state):
             self.window.append_event(ev)
+
+        # Keep reference label current
+        if (self._tick_i % 30) == 0:
+            self._refresh_reference_ui()
 
     def shutdown(self) -> None:
         try:
@@ -124,13 +133,72 @@ class AppController(QtCore.QObject):
         except Exception:
             pass
 
+    def _feature_spec_snapshot(self) -> dict:
+        feats = list(self._research_features or list(self.research_cfg.features))
+        return {
+            "schema_version": int(SCHEMA_VERSION),
+            "n_bins": int(self.research_cfg.n_bins),
+            "features": feats,
+            "normalize": bool(self._research_normalize),
+        }
+
+    def _build_run_extra_meta(self) -> dict:
+        spec = FeatureSpec(tuple(self._research_features or list(self.research_cfg.features)))
+        fss = self._feature_spec_snapshot()
+        sh = schema_hash(spec=spec, normalize=bool(self._research_normalize), n_bins=int(self.research_cfg.n_bins))
+
+        ref_info = self.session.reference_info()
+
+        return {
+            "sampling_hz_source_confirmed": 60,
+            "n_bins": self.research_cfg.n_bins,
+            "features": list(spec.features),
+            "normalize": bool(self._research_normalize),
+            "schema_version": int(SCHEMA_VERSION),
+            "schema_hash": sh,
+            "feature_spec": fss,
+            "ui_visualization_rate_hz": (60 if getattr(self, "_viz_div", 6) == 1 else 10),
+            "buffer_samples": getattr(getattr(self.session, "_samples", None), "maxlen", None),
+            "platform": platform.platform(),
+            "track_name": self._run_meta.get("track_name"),
+            "car_name": self._run_meta.get("car_name"),
+            "run_alias": self._run_meta.get("run_alias"),
+            "notes": self._run_meta.get("notes"),
+            "reference_locked": bool(ref_info.get("locked", False)),
+            "reference_lap_num": ref_info.get("lap_num"),
+            "reference_lap_time_ms": ref_info.get("lap_time_ms"),
+        }
+
+    def _create_new_run(self) -> None:
+        self.run = create_run(
+            output_root=self.research_cfg.output_root,
+            run_tag=self.research_cfg.run_tag,
+            extra_meta=self._build_run_extra_meta(),
+        )
+        self._refresh_run_meta_ui()
+
+    def _patch_run_json(self, run_dir: Path, patch: dict) -> None:
+        run_path = run_dir / "run.json"
+        data = _read_json(run_path) if run_path.exists() else {}
+        for k, v in patch.items():
+            data[k] = v
+        _safe_write_json(run_path, data)
+
+    def _patch_manifest(self, run_dir: Path, entry: dict) -> None:
+        mpath = run_dir / "manifest.json"
+        data = _read_json(mpath) if mpath.exists() else {}
+        data.setdefault("run_id", run_dir.name)
+        data.setdefault("created_utc", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        data["updated_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        data.setdefault("dataset_builds", [])
+        data["dataset_builds"].append(entry)
+        _safe_write_json(mpath, data)
+
     def _on_lap_finalized(self, lap, session) -> None:
-        """Called by TelemetrySession after a lap is finalized (research mode only)."""
         if not self.research_cfg.enabled or self.run is None:
             return
 
-        # UI-selected features override config defaults
-        feats = getattr(self, "_research_features", None) or list(self.research_cfg.features)
+        feats = list(self._research_features or list(self.research_cfg.features))
         spec = FeatureSpec(tuple(feats))
 
         try:
@@ -145,33 +213,38 @@ class AppController(QtCore.QObject):
                 export_baselines=(self.research_cfg.export_delta_profile or self.research_cfg.export_corner_rows),
                 export_corners=self.research_cfg.export_corners,
             )
+
+            # Keep run.json aligned with current reference state
+            ref_info = self.session.reference_info()
+            self._patch_run_json(Path(self.run.run_dir), {
+                "reference_locked": bool(ref_info.get("locked", False)),
+                "reference_lap_num": ref_info.get("lap_num"),
+                "reference_lap_time_ms": ref_info.get("lap_time_ms"),
+            })
         except Exception as e:
             print("Research export error:", repr(e))
 
-
-
-
     @QtCore.Slot(dict)
     def _on_apply_settings(self, s: dict) -> None:
-        # 1) UI update rate (visualizations only; keep sampling at ~60 Hz)
         ui_hz = int(s.get("ui_rate_hz", 10))
-        self._viz_div = 1 if ui_hz >= 60 else 6  # 60/6 ≈ 10 Hz
+        self._viz_div = 1 if ui_hz >= 60 else 6
 
-        # 2) Session buffer length (requires rebuilding TelemetrySession to change deque maxlen)
         new_buf = int(s.get("buffer_samples", 36000))
-        # Rebuild session only if changed; this clears history (acceptable for a new run or deliberate change).
         try:
-            current_max = self.session._samples.maxlen  # ok for internal tool; you own the codebase
+            current_max = self.session._samples.maxlen
         except Exception:
             current_max = None
 
         if current_max != new_buf:
             old_cb = getattr(self.session, "on_lap_finalized", None)
+            locked = self.session.reference_locked()
+            ref = self.session.reference_info().get("lap_num")
             self.session = TelemetrySession(max_samples=new_buf)
-            if old_cb is not None:
-                self.session.on_lap_finalized = old_cb
+            self.session.on_lap_finalized = old_cb
+            if ref is not None:
+                self.session.set_reference_by_lap_num(int(ref))
+            self.session.lock_reference(bool(locked))
 
-        # 3) Research config (frozen dataclass -> replace)
         enabled = bool(s.get("research_enabled", True))
 
         self.research_cfg = replace(
@@ -187,37 +260,21 @@ class AppController(QtCore.QObject):
             run_tag=s.get("run_tag", None),
         )
 
-        # Store extra “representation” settings (feature list, normalize) in controller for metadata
-        # (These don’t change export until you update schema.py to honor them; still worth recording now.)
         self._research_features = list(s.get("features", []))
         self._research_normalize = bool(s.get("normalize", False))
 
-        # Ensure callback installed/removed based on enabled
         if self.research_cfg.enabled:
             self.session.on_lap_finalized = self._on_lap_finalized
             if self.run is None:
                 self._create_new_run()
+            else:
+                self._patch_run_json(Path(self.run.run_dir), self._build_run_extra_meta())
         else:
             self.run = None
-            # keep session callback unset
             self.session.on_lap_finalized = None
 
-
-    def _create_new_run(self) -> None:
-        self.run = create_run(
-            output_root=self.research_cfg.output_root,
-            run_tag=self.research_cfg.run_tag,
-            extra_meta={
-                "sampling_hz_source_confirmed": 60,
-                "n_bins": self.research_cfg.n_bins,
-                "features": getattr(self, "_research_features", None),
-                "normalize": getattr(self, "_research_normalize", False),
-                "ui_visualization_rate_hz": (60 if self._viz_div == 1 else 10),
-                "buffer_samples": getattr(self.session._samples, "maxlen", None),
-                "platform": platform.platform(),
-            },
-        )
-
+        self._refresh_run_meta_ui()
+        self._refresh_reference_ui()
 
     @QtCore.Slot()
     def _on_start_new_run(self) -> None:
@@ -225,13 +282,11 @@ class AppController(QtCore.QObject):
             return
         self._create_new_run()
 
-
     @QtCore.Slot()
     def _on_open_run_dir(self) -> None:
         if self.run is None:
             return
         path = str(self.run.run_dir)
-        # Cross-platform "open folder"
         try:
             if sys.platform.startswith("win"):
                 os.startfile(path)  # type: ignore[attr-defined]
@@ -242,36 +297,142 @@ class AppController(QtCore.QObject):
         except Exception as e:
             print("Open run folder error:", repr(e))
 
+    @QtCore.Slot()
     def _on_export_dataset(self) -> None:
         if self.run is None:
             print("No active run; cannot export dataset.")
             return
 
         try:
-            track_name = None
-            # best-effort: pull from run metadata if available
-            if hasattr(self.run, "meta") and isinstance(self.run.meta, dict):
-                track_name = self.run.meta.get("track_name")
+            paths, report = build_and_save_corner_dataset(self.run.run_dir)
 
-            paths, report = build_and_save_corner_dataset(
-                self.run.run_dir,
-                track_name=track_name,
-            )
+            # Update manifest with dataset build
+            entry = {
+                "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "paths": {
+                    "csv": str(paths.get("csv")) if paths.get("csv") else None,
+                    "parquet": str(paths.get("parquet")) if paths.get("parquet") else None,
+                    "build": str(paths.get("build")) if paths.get("build") else None,
+                },
+                "counts": {
+                    "corners_seen": report.corners_seen,
+                    "rows_emitted": report.rows_emitted,
+                    "corners_skipped": report.corners_skipped,
+                },
+                "schema_version": report.schema_version,
+                "schema_hash": report.schema_hash,
+                "skip_reasons": report.reasons,
+            }
+            self._patch_manifest(Path(self.run.run_dir), entry)
+
+            # QA summary text for UI
+            lines = []
+            lines.append(f"Run: {Path(self.run.run_dir).name}")
+            lines.append(f"Rows: {report.rows_emitted}  (seen {report.corners_seen}, skipped {report.corners_skipped})")
+            lines.append(f"Schema: v{report.schema_version}  hash {report.schema_hash}")
+            if report.reasons:
+                lines.append("Skips:")
+                for k, v in sorted(report.reasons.items(), key=lambda kv: (-kv[1], kv[0])):
+                    lines.append(f"  - {k}: {v}")
+            else:
+                lines.append("Skips: none")
+
+            self.window.set_qa_summary("\n".join(lines))
 
             print("Dataset export complete:")
             print("  CSV:", paths.get("csv"))
             if paths.get("parquet"):
                 print("  Parquet:", paths.get("parquet"))
             print("  Rows:", report.rows_emitted)
-
         except Exception as e:
             print("Dataset export error:", repr(e))
+
+    def _refresh_run_meta_ui(self) -> None:
+        try:
+            run_id = getattr(self.run, "run_id", None) if self.run else None
+            run_dir = str(getattr(self.run, "run_dir", "")) if self.run else None
+            self.window.set_current_run_info(
+                run_id=run_id,
+                run_dir=run_dir,
+                track_name=self._run_meta.get("track_name"),
+                car_name=self._run_meta.get("car_name"),
+                run_alias=self._run_meta.get("run_alias"),
+            )
+        except Exception:
+            pass
+
+    def _refresh_reference_ui(self) -> None:
+        try:
+            info = self.session.reference_info()
+            self.window.set_reference_info(
+                lap_num=info.get("lap_num"),
+                lap_time_ms=info.get("lap_time_ms"),
+                locked=bool(info.get("locked", False)),
+            )
+        except Exception:
+            pass
+
+    @QtCore.Slot(dict)
+    def _on_apply_run_metadata(self, meta: dict) -> None:
+        self._run_meta.update(meta or {})
+
+        if self.run is not None:
+            self._patch_run_json(Path(self.run.run_dir), {
+                "track_name": self._run_meta.get("track_name"),
+                "car_name": self._run_meta.get("car_name"),
+                "run_alias": self._run_meta.get("run_alias"),
+                "notes": self._run_meta.get("notes"),
+            })
+
+        self._refresh_run_meta_ui()
+
+    @QtCore.Slot(dict)
+    def _on_start_new_run_with_meta(self, meta: dict) -> None:
+        self._run_meta.update(meta or {})
+        if not self.research_cfg.enabled:
+            return
+
+        # In research mode, missing track/car means your data becomes hard to use later
+        track = (self._run_meta.get("track_name") or "").strip()
+        car = (self._run_meta.get("car_name") or "").strip()
+        if not track or not car:
+            QtWidgets.QMessageBox.warning(
+                self.window,
+                "Missing metadata",
+                "Track name and car name should be set before starting a new run for research exports.",
+            )
+            return
+
+        self._create_new_run()
+
+    @QtCore.Slot()
+    def _on_set_reference_best(self) -> None:
+        ok = self.session.set_reference_best()
+        if not ok:
+            return
+        self._refresh_reference_ui()
+        if self.run is not None:
+            info = self.session.reference_info()
+            self._patch_run_json(Path(self.run.run_dir), {
+                "reference_lap_num": info.get("lap_num"),
+                "reference_lap_time_ms": info.get("lap_time_ms"),
+            })
+
+    @QtCore.Slot(bool)
+    def _on_toggle_reference_lock(self, locked: bool) -> None:
+        self.session.lock_reference(bool(locked))
+        self._refresh_reference_ui()
+        if self.run is not None:
+            info = self.session.reference_info()
+            self._patch_run_json(Path(self.run.run_dir), {
+                "reference_locked": bool(locked),
+                "reference_lap_num": info.get("lap_num"),
+                "reference_lap_time_ms": info.get("lap_time_ms"),
+            })
 
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-
-    # Use Fusion for predictable palette rendering across OS themes
     app.setStyle("Fusion")
 
     ctl = AppController()
@@ -279,7 +440,6 @@ def main():
 
     app.aboutToQuit.connect(ctl.shutdown)
     sys.exit(app.exec())
-
 
 
 if __name__ == "__main__":

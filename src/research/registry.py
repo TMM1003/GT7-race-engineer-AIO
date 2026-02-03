@@ -6,9 +6,10 @@ from pathlib import Path
 import json
 import os
 import platform
+import re
 import subprocess
 import time
-import uuid
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 
@@ -27,6 +28,33 @@ def _git_commit_short() -> Optional[str]:
         return None
 
 
+def _slug(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
+
+
+def _make_run_id(*, run_alias: Optional[str], run_tag: Optional[str]) -> str:
+    base = run_alias or run_tag or "run"
+    base = _slug(base) or "run"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{base}__{ts}"
+
+
+def _ensure_unique_dir(root: Path, run_id: str) -> Path:
+    candidate = root / run_id
+    if not candidate.exists():
+        return candidate
+
+    i = 1
+    while True:
+        alt = root / f"{run_id}__{i:02d}"
+        if not alt.exists():
+            return alt
+        i += 1
+
+
 @dataclass(frozen=True)
 class RunRegistry:
     run_id: str
@@ -43,15 +71,24 @@ def create_run(output_root: str, run_tag: Optional[str] = None, extra_meta: Opti
         laps/
         corners/
         baselines/
+        manifest.json
+
+    Folder naming scheme:
+      <run_alias-or-run_tag-or-run>__YYYYMMDD_HHMMSS[__NN]
     """
-    root = Path(output_root)
+    root = Path(output_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    run_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-    run_dir = root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    extra_meta = dict(extra_meta or {})
+    run_alias = extra_meta.get("run_alias")
 
-    # standard subdirs
+    desired_run_id = _make_run_id(run_alias=run_alias, run_tag=run_tag)
+    run_dir = _ensure_unique_dir(root, desired_run_id)
+
+    run_id = run_dir.name
+    run_dir.mkdir(parents=True, exist_ok=False)
+
+    # Standard subdirs
     (run_dir / "laps").mkdir(exist_ok=True)
     (run_dir / "corners").mkdir(exist_ok=True)
     (run_dir / "baselines").mkdir(exist_ok=True)
@@ -69,11 +106,29 @@ def create_run(output_root: str, run_tag: Optional[str] = None, extra_meta: Opti
             "RESEARCH_N_BINS": os.getenv("RESEARCH_N_BINS"),
             "RESEARCH_OUTPUT_ROOT": os.getenv("RESEARCH_OUTPUT_ROOT"),
         },
+        # Reference selection is session-derived but we persist a header slot here
+        "reference_locked": False,
+        "reference_lap_num": None,
+        "reference_lap_time_ms": None,
     }
-    if extra_meta:
-        meta.update(extra_meta)
+
+    # Overlay any additional metadata (track/car/alias/notes/feature_spec/schema version/hash/etc.)
+    meta.update(extra_meta)
 
     with (run_dir / "run.json").open("w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, sort_keys=True)
+
+    # Initialize manifest
+    manifest = {
+        "run_id": run_id,
+        "created_utc": meta["created_utc"],
+        "updated_utc": meta["created_utc"],
+        "laps": [],
+        "baselines": [],
+        "corners": [],
+        "dataset_builds": [],
+    }
+    with (run_dir / "manifest.json").open("w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
 
     return RunRegistry(run_id=run_id, run_dir=run_dir, created_utc=meta["created_utc"], meta=meta)
