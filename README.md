@@ -175,16 +175,6 @@ pip install -r requirements.txt
 
 ---
 
-## Status
-
-- ✔ Live telemetry capture implemented
-- ✔ Corner detection and reference alignment stable
-- ✔ Offline dataset reconstruction validated
-- ✔ CSV and Parquet dataset export working
-- ✔ Research pipeline reproducible without UI dependency
-
----
-
 ## License
 
 This project is currently intended for academic and research use.  
