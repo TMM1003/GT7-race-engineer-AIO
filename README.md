@@ -162,10 +162,14 @@ These limitations are explicitly acknowledged in the associated research work.
 ## Requirements
 
 - Python 3.9+
+- PySide6 (UI)
+- Pycryptodome
+- Pyqtgraph
+- PyOpenGL
+- Scikit
 - numpy
 - pandas
 - pyarrow (for Parquet support)
-- PySide6 (UI)
 
 Install dependencies with:
 
