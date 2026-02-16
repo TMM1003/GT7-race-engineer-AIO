@@ -24,6 +24,8 @@ from src.research.export import export_lap_bundle
 from src.research.schema import FeatureSpec, SCHEMA_VERSION, schema_hash
 from src.research.dataset import build_and_save_corner_dataset
 
+from src.gt7db import GT7Database
+
 
 def _read_json(path: Path) -> dict:
     try:
@@ -40,15 +42,23 @@ class AppController(QtCore.QObject):
     def __init__(self):
         super().__init__()
 
+        #Core State
         self.state = RaceState()
         self.events = EventEngine()
-
         self.session = TelemetrySession(max_samples=36000)
 
-        self.research_cfg = load_config()
 
-        # No run should exist at app startup
+        #Research Config
+        self.research_cfg = load_config()
         self.run = None
+
+        
+        # GT7 reference database (cars / venues / layouts)
+        self.gt7db = GT7Database.load(Path("data/gt7db"))
+        print("[gt7db] cars loaded:", len(self.gt7db.cars))
+        print("[gt7db] venues loaded:", len(self.gt7db.venues))
+        print("[gt7db] layouts loaded:", len(self.gt7db.layouts))
+
 
         # Do not attach lap-finalize callback until research is enabled
         self.session.on_lap_finalized = None
@@ -70,18 +80,26 @@ class AppController(QtCore.QObject):
         self.comm.start()
 
         self.window = MainWindow()
-        self.window.set_controller(self)
+        
+        #Give SettingsTab access to gt7db
+        try:
+            self.window.settings_tab.set_gt7_database(self.gt7db)
+        except Exception as e:
+            print("[gt7db] failed to attach to settings tab:", repr(e))
+        
+        self.window.settings_tab.sig_export_dataset.connect(
+            self._on_export_dataset
+        )
 
         self.window.sig_apply_settings.connect(self._on_apply_settings)
         self.window.sig_start_new_run.connect(self._on_start_new_run)
         self.window.sig_open_run_dir.connect(self._on_open_run_dir)
-        self.window.sig_export_dataset.connect(self._on_export_dataset)
 
         self.window.sig_apply_run_metadata.connect(self._on_apply_run_metadata)
         self.window.sig_start_new_run_with_meta.connect(self._on_start_new_run_with_meta)
 
-        self.window.sig_set_reference_best.connect(self._on_set_reference_best)
-        self.window.sig_toggle_reference_lock.connect(self._on_toggle_reference_lock)
+        #self.window.sig_set_reference_best.connect(self._on_set_reference_best)
+        #self.window.sig_toggle_reference_lock.connect(self._on_toggle_reference_lock)
 
         self.window.sig_force_ip.connect(self._on_force_ip)
 
@@ -93,20 +111,53 @@ class AppController(QtCore.QObject):
         self._refresh_run_meta_ui()
         self._refresh_reference_ui()
 
+        
+        self._dbg_last_car_id = object()   # sentinel
+        self._dbg_last_connected = object()
+
     @QtCore.Slot(str)
     def _on_force_ip(self, ip: str) -> None:
         ip = ip.strip()
         if not ip:
+            # Empty input resets to broadcast auto-discovery.
+            self.comm.set_playstation_ip(self.comm.DISCOVERY_SENTINEL)
+            self.comm.restart()
             return
         self.comm.set_playstation_ip(ip)
         self.comm.restart()
 
     def _tick(self) -> None:
         snap = self.comm.snapshot()
-        if not snap or not snap.get("in_race"):
+        if not snap:
             return
 
+        # Only print when connected status or car_id changes
+        connected = bool(snap.get("connected", False))
+        car_id = snap.get("car_id")
+        diag = self._build_connection_diagnostics(snap)
+
+        if connected != self._dbg_last_connected or car_id != self._dbg_last_car_id:
+            print(f"[tick] connected = {connected} \ncar_id = {car_id}")
+            self._dbg_last_connected = connected
+            self._dbg_last_car_id = car_id
+
+        try:
+            self.window.set_connected(connected)
+            self.window.update_connection_diagnostics(diag)
+        except Exception as e:
+            print("Overview update error:", repr(e))
+
+        try:
+            self.window.settings_tab.update_from_snapshot(snap)
+        except Exception as e:
+            print("SettingsTab update error:", repr(e))
+
+        # Keep core state synchronized even when telemetry is not "live" for exports.
         self.state.update(snap)
+
+        if not snap.get("in_race"):
+            return
+
         self.window.update_state(self.state, snap)
 
         self.session.update_from_snapshot(snap)
@@ -126,6 +177,40 @@ class AppController(QtCore.QObject):
         # Keep reference label current
         if (self._tick_i % 30) == 0:
             self._refresh_reference_ui()
+
+    def _build_connection_diagnostics(self, snap: dict) -> dict:
+        configured_ip = getattr(self.comm, "playstation_ip", None)
+        discovery_sentinel = getattr(self.comm, "DISCOVERY_SENTINEL", "AUTO")
+        mode = "AUTO" if configured_ip in (None, "", discovery_sentinel) else "MANUAL"
+
+        if mode == "AUTO":
+            configured_for_display = None
+        else:
+            configured_for_display = configured_ip
+
+        active_ip = snap.get("ip")
+        if not active_ip and mode == "MANUAL":
+            active_ip = configured_ip
+
+        return {
+            "connected": bool(snap.get("connected", False)),
+            "in_race": bool(snap.get("in_race", False)),
+            "paused": bool(snap.get("paused", False)),
+            "mode": mode,
+            "configured_ip": configured_for_display,
+            "active_ip": active_ip,
+            "rx_age_s": snap.get("rx_age_s"),
+            "telemetry_seq": snap.get("telemetry_seq"),
+            "package_id": snap.get("package_id"),
+            "connection_error": snap.get("connection_error"),
+            "bound_recv_port": snap.get("bound_recv_port"),
+            "rx_datagrams": snap.get("rx_datagrams"),
+            "rx_valid_packets": snap.get("rx_valid_packets"),
+            "tx_heartbeats": snap.get("tx_heartbeats"),
+            "last_sender_ip": snap.get("last_sender_ip"),
+            "send_port": getattr(self.comm, "SEND_PORT", None),
+            "recv_port": getattr(self.comm, "RECV_PORT", None),
+        }
 
     def shutdown(self) -> None:
         try:
@@ -344,6 +429,10 @@ class AppController(QtCore.QObject):
             print("No active run; cannot export dataset.")
             return
 
+        build_and_save_corner_dataset(
+            run_dir=self.run.run_dir,
+            overwrite=True,
+        )
         try:
             paths, report = build_and_save_corner_dataset(self.run.run_dir)
 

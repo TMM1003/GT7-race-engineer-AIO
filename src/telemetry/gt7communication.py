@@ -13,6 +13,11 @@ from Crypto.Cipher import Salsa20
 
 @dataclass
 class GTData:
+    # Core telemetry fields parsed below need bytes through offset 0x92 inclusive.
+    MIN_PACKET_SIZE = 0x93
+    CAR_ID_OFFSET = 0x124
+    CAR_ID_SIZE = 4
+
     package_id: int = 0
     best_lap_ms: int = 0
     last_lap_ms: int = 0
@@ -41,46 +46,54 @@ class GTData:
     position_y: float = 0.0
     position_z: float = 0.0
 
+    car_id: Optional[int] = None
+    
     @staticmethod
     def from_packet(ddata: bytes) -> "GTData":
-        if not ddata:
+        if not ddata or len(ddata) < GTData.MIN_PACKET_SIZE:
             return GTData()
 
         # Position/physics (0x04..0x34 range in docs)
         # PositionX/Y/Z are float32 at the start of that block.
-        position_x = struct.unpack("f", ddata[0x04:0x08])[0]
-        position_y = struct.unpack("f", ddata[0x08:0x0C])[0]
-        position_z = struct.unpack("f", ddata[0x0C:0x10])[0]
+        position_x = struct.unpack("<f", ddata[0x04:0x08])[0]
+        position_y = struct.unpack("<f", ddata[0x08:0x0C])[0]
+        position_z = struct.unpack("<f", ddata[0x0C:0x10])[0]
 
         # Packet metadata / timing
-        package_id = struct.unpack("i", ddata[0x70:0x74])[0]
-        best_lap = struct.unpack("i", ddata[0x78:0x7C])[0]
-        last_lap = struct.unpack("i", ddata[0x7C:0x80])[0]
-        current_lap = struct.unpack("h", ddata[0x74:0x76])[0]
-        total_laps = struct.unpack("h", ddata[0x76:0x78])[0]
+        package_id = struct.unpack("<I", ddata[0x70:0x74])[0]
+        best_lap = struct.unpack("<i", ddata[0x78:0x7C])[0]
+        last_lap = struct.unpack("<i", ddata[0x7C:0x80])[0]
+        current_lap = struct.unpack("<h", ddata[0x74:0x76])[0]
+        total_laps = struct.unpack("<h", ddata[0x76:0x78])[0]
 
-        time_on_track = timedelta(seconds=round(struct.unpack("i", ddata[0x80:0x84])[0] / 1000))
+        time_on_track = timedelta(seconds=round(struct.unpack("<i", ddata[0x80:0x84])[0] / 1000))
 
         # Engine / fuel / speed 
-        fuel_capacity = struct.unpack("f", ddata[0x48:0x4C])[0]
-        current_fuel = struct.unpack("f", ddata[0x44:0x48])[0]
-        car_speed = 3.6 * struct.unpack("f", ddata[0x4C:0x50])[0]  # m/s -> km/h
+        fuel_capacity = struct.unpack("<f", ddata[0x48:0x4C])[0]
+        current_fuel = struct.unpack("<f", ddata[0x44:0x48])[0]
+        car_speed = 3.6 * struct.unpack("<f", ddata[0x4C:0x50])[0]  # m/s -> km/h
 
-        rpm = struct.unpack("f", ddata[0x3C:0x40])[0]
+        rpm = struct.unpack("<f", ddata[0x3C:0x40])[0]
 
         # Controls (0x90..0x92 range in docs) 
         # Gear byte packs current+suggested: low nibble = current, high nibble = suggested
-        gear_byte = struct.unpack("B", ddata[0x90:0x91])[0]
+        gear_byte = struct.unpack("<B", ddata[0x90:0x91])[0]
         current_gear = gear_byte & 0b00001111
         suggested_gear = (gear_byte >> 4) & 0b00001111
 
-        throttle = struct.unpack("B", ddata[0x91:0x92])[0] / 2.55
-        brake = struct.unpack("B", ddata[0x92:0x93])[0] / 2.55
+        throttle = struct.unpack("<B", ddata[0x91:0x92])[0] / 2.55
+        brake = struct.unpack("<B", ddata[0x92:0x93])[0] / 2.55
 
         # Flags (docs mention flags at 0x8E; keeping your existing interpretation)
-        flags = struct.unpack("B", ddata[0x8E:0x8F])[0]
-        is_paused = bin(flags)[-2] == "1"
-        in_race = bin(flags)[-1] == "1"
+        flags = struct.unpack("<B", ddata[0x8E:0x8F])[0]
+        is_paused = bool(flags & 0b00000010)
+        in_race = bool(flags & 0b00000001)
+        
+        # car_id is optional; some packet variants are shorter.
+        car_id = None
+        if len(ddata) >= (GTData.CAR_ID_OFFSET + GTData.CAR_ID_SIZE):
+            car_id = struct.unpack("<i", ddata[GTData.CAR_ID_OFFSET:GTData.CAR_ID_OFFSET + GTData.CAR_ID_SIZE])[0]
+
 
         return GTData(
             package_id=package_id,
@@ -102,6 +115,7 @@ class GTData:
             position_x=position_x,
             position_y=position_y,
             position_z=position_z,
+            car_id=car_id,
         )
 
 
@@ -141,6 +155,19 @@ class GT7Communication(Thread):
         self._last_rx_time = 0.0
         self._telemetry_seq = 0
         self._last_gtdata: GTData = GTData()
+        self._last_error: Optional[str] = None
+        self._bound_recv_port: Optional[int] = None
+        self._rx_datagrams = 0
+        self._rx_valid_packets = 0
+        self._tx_heartbeats = 0
+        self._last_sender_ip: Optional[str] = None
+        try:
+            hb = float(os.getenv("GT7_HEARTBEAT_INTERVAL_S", "1.00"))
+        except Exception:
+            hb = 1.00
+        self._hb_interval_s = max(0.05, min(1.0, hb))
+        self._socket_timeout_s = 0.25
+        self._no_data_warn_after_s = 3.0
 
     def stop(self) -> None:
         self._shall_run = False
@@ -149,10 +176,51 @@ class GT7Communication(Thread):
         self._shall_restart = True
 
     def set_playstation_ip(self, ip: str) -> None:
-        self.playstation_ip = ip
+        normalized = (ip or "").strip()
+        self.playstation_ip = normalized or self.DISCOVERY_SENTINEL
+        if self.playstation_ip == self.DISCOVERY_SENTINEL:
+            self._discovered_ip = None
 
     def is_connected(self) -> bool:
         return self._last_rx_time > 0 and (time.time() - self._last_rx_time) <= 1.0
+
+    def _set_error(self, message: str) -> None:
+        msg = (message or "").strip()
+        if not msg:
+            return
+        if msg != self._last_error:
+            self._last_error = msg
+            print(f"[gt7comm] {msg}")
+
+    def _clear_error(self) -> None:
+        self._last_error = None
+
+    def _make_socket(self, *, broadcast: bool = False) -> socket.socket:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        if broadcast:
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            except OSError:
+                pass
+        if os.name == "nt":
+            # Windows can raise WSAECONNRESET on UDP recvfrom after ICMP errors.
+            # Disable that behavior so transient network errors don't break the loop.
+            try:
+                s.ioctl(socket.SIO_UDP_CONNRESET, False)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        return s
+
+    def _report_no_data(self, ip: Optional[str]) -> None:
+        target = (ip or "").strip()
+        if target:
+            self._set_error(
+                f"No telemetry packets from {target}. Verify PS5 IP, GT7 on-track state, and Windows firewall UDP {self.RECV_PORT}."
+            )
+        else:
+            self._set_error(
+                f"No telemetry packets received. Set PS5 IP manually or verify network/firewall UDP {self.RECV_PORT}."
+            )
 
     def _on_sample(self, _gt: GTData) -> None:
         # Reserved for future: push into a higher-rate session buffer, etc.
@@ -170,6 +238,12 @@ class GT7Communication(Thread):
             "telemetry_seq": self._telemetry_seq,
             "rx_age_s": None if self._last_rx_time == 0 else (time.time() - self._last_rx_time),
             "package_id": d.package_id,
+            "connection_error": self._last_error,
+            "bound_recv_port": self._bound_recv_port,
+            "rx_datagrams": self._rx_datagrams,
+            "rx_valid_packets": self._rx_valid_packets,
+            "tx_heartbeats": self._tx_heartbeats,
+            "last_sender_ip": self._last_sender_ip,
 
             "lap": d.current_lap,
             "total_laps": d.total_laps,
@@ -193,20 +267,22 @@ class GT7Communication(Thread):
             "position_x": d.position_x,
             "position_y": d.position_y,
             "position_z": d.position_z,
+            "car_id": d.car_id,
         }
 
 
     def _send_hb(self, s: socket.socket, ip: str) -> None:
         try:
             s.sendto(b"A", (ip, self.SEND_PORT))
+            self._tx_heartbeats += 1
         except OSError:
             pass
 
     def _discover_playstation_ip(self, timeout_sec: float = 3.0) -> Optional[str]:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s = self._make_socket(broadcast=True)
         try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             s.bind(("0.0.0.0", self.RECV_PORT))
+            self._bound_recv_port = int(s.getsockname()[1])
             s.settimeout(0.25)
 
             end = time.time() + timeout_sec
@@ -216,14 +292,21 @@ class GT7Communication(Thread):
                     data, addr = s.recvfrom(4096)
                 except socket.timeout:
                     continue
+                self._rx_datagrams += 1
+                self._last_sender_ip = addr[0]
                 ddata = salsa20_dec(data)
                 if ddata:
+                    self._rx_valid_packets += 1
                     return addr[0]
+            self._report_no_data(None)
+        except OSError as e:
+            self._set_error(f"Discovery socket error on UDP {self.RECV_PORT}: {e}")
         finally:
             try:
                 s.close()
             except Exception:
                 pass
+            self._bound_recv_port = None
         return None
 
     def run(self) -> None:
@@ -242,48 +325,67 @@ class GT7Communication(Thread):
                 else:
                     self._discovered_ip = ip
 
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s = self._make_socket()
                 s.bind(("0.0.0.0", self.RECV_PORT))
-                s.settimeout(1.0)
+                self._bound_recv_port = int(s.getsockname()[1])
+                s.settimeout(self._socket_timeout_s)
 
                 self._send_hb(s, ip)
+                last_hb_time = time.monotonic()
+                last_rx_any_time = time.monotonic()
 
-                last_seen_package_id = 0
-                hb_counter = 0
+                last_seen_package_id: Optional[int] = None
 
                 while self._shall_run and not self._shall_restart:
+                    now_mono = time.monotonic()
+                    if (now_mono - last_hb_time) >= self._hb_interval_s:
+                        self._send_hb(s, ip)
+                        last_hb_time = now_mono
+
                     try:
-                        data, _addr = s.recvfrom(4096)
+                        data, addr = s.recvfrom(4096)
+                        last_rx_any_time = time.monotonic()
+                        self._rx_datagrams += 1
+                        self._last_sender_ip = addr[0]
                         ddata = salsa20_dec(data)
                         if not ddata:
                             continue
+                        if len(ddata) < GTData.MIN_PACKET_SIZE:
+                            continue
 
-                        pkg_id = struct.unpack("i", ddata[0x70:0x74])[0]
-                        if pkg_id <= last_seen_package_id:
+                        pkg_id = struct.unpack("<I", ddata[0x70:0x74])[0]
+                        if last_seen_package_id is not None and pkg_id == last_seen_package_id:
+                            self._last_rx_time = time.time()
+                            self._clear_error()
                             continue
                         last_seen_package_id = pkg_id
 
                         gt = GTData.from_packet(ddata)
                         self._last_gtdata = gt
                         self._last_rx_time = time.time()
+                        self._rx_valid_packets += 1
+                        self._clear_error()
 
                         # now safe (no AttributeError)
                         self._on_sample(gt)
 
                         self._telemetry_seq += 1
 
-                        hb_counter += 1
-                        if hb_counter >= 50:
-                            self._send_hb(s, ip)
-                            hb_counter = 0
-
                     except socket.timeout:
-                        self._send_hb(s, ip)
+                        now_mono = time.monotonic()
+                        if (now_mono - last_hb_time) >= self._hb_interval_s:
+                            self._send_hb(s, ip)
+                            last_hb_time = now_mono
+                        if (now_mono - last_rx_any_time) >= self._no_data_warn_after_s:
+                            self._report_no_data(ip)
+                    except struct.error:
+                        # Ignore malformed packets and keep listening.
+                        continue
                     except OSError:
                         break
 
-            except Exception:
-                # Keep this broad catch for now, but once stable we should log exceptions.
+            except Exception as e:
+                self._set_error(f"Connection loop error: {e}")
                 time.sleep(0.5)
             finally:
                 if s:
@@ -291,5 +393,6 @@ class GT7Communication(Thread):
                         s.close()
                     except Exception:
                         pass
+                self._bound_recv_port = None
                 if not self._shall_restart:
                     time.sleep(0.1)
