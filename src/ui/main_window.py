@@ -59,7 +59,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self._gt7db = None
         try:
-            db_root = Path("data/gt7db")
+            db_root = Path("src/gt7db")
             # expects: gt7_car.csv, gt7_venues.csv, gt7_layouts.csv
             self._gt7db = GT7Database.load(db_root)
             self.settings_tab.set_gt7_database(self._gt7db)

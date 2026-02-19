@@ -54,7 +54,7 @@ class AppController(QtCore.QObject):
 
         
         # GT7 reference database (cars / venues / layouts)
-        self.gt7db = GT7Database.load(Path("data/gt7db"))
+        self.gt7db = GT7Database.load(Path("src/gt7db"))
         print("[gt7db] cars loaded:", len(self.gt7db.cars))
         print("[gt7db] venues loaded:", len(self.gt7db.venues))
         print("[gt7db] layouts loaded:", len(self.gt7db.layouts))
