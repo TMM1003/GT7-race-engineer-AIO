@@ -1,5 +1,6 @@
 # scripts/build_dataset.py
 from __future__ import annotations
+from src.research.dataset import build_and_save_corner_dataset
 
 import argparse
 import sys
@@ -10,12 +11,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.research.dataset import build_and_save_corner_dataset
-
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Offline rebuild of corner-level dataset from a GT7 run folder"
+        description=(
+            "Offline rebuild of corner-level dataset "
+            "from a GT7 run folder"
+        )
     )
     ap.add_argument(
         "run_dir",
@@ -48,7 +50,9 @@ def main() -> int:
     run_dir = args.run_dir.expanduser().resolve()
 
     if not run_dir.exists():
-        print(f"ERROR: Run directory does not exist: {run_dir}", file=sys.stderr)
+        print(
+            f"ERROR: Run directory does not exist: {run_dir}", file=sys.stderr
+        )
         return 1
 
     if not (run_dir / "run.json").exists():

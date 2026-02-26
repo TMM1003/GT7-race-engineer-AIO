@@ -12,7 +12,8 @@ class TrackMap3DWidget(QtWidgets.QWidget):
     """
     3D track visualization using pyqtgraph's OpenGL module.
 
-    This 3D view is intended to model *track elevation*, not car vertical dynamics.
+    This 3D view is intended to model track elevation,
+    not car vertical dynamics.
     Raw PositionY often includes suspension/compression noise; we compute an
     elevation proxy via distance-based smoothing + loop-closure correction.
 
@@ -42,9 +43,14 @@ class TrackMap3DWidget(QtWidgets.QWidget):
         # Elevation mode: "proxy" (smoothed, recommended) or "raw"
         self._elevation_mode: str = "proxy"
 
-        # Smoothing parameters (in "track distance units" – typically meters-ish)
-        self._elev_tau_m: float = 15.0   # low-pass distance constant; higher = smoother
-        self._elev_outlier_clip_pct: float = 99.0  # robust clip raw Y before smoothing
+        # Smoothing parameters (in "track distance units" – typically
+        # meters-ish)
+        self._elev_tau_m: float = (
+            15.0  # low-pass distance constant; higher = smoother
+        )
+        self._elev_outlier_clip_pct: float = (
+            99.0  # robust clip raw Y before smoothing
+        )
 
         # Grade coloring (slope) for the "last" lap
         self._grade_coloring_enabled: bool = True
@@ -64,7 +70,10 @@ class TrackMap3DWidget(QtWidgets.QWidget):
     # ----------------------------
 
     def _init_gl_view(self) -> None:
-        """Create the GLViewWidget and grid (or fallback label). Safe to call multiple times."""
+        """
+        Create the GLViewWidget and grid (or fallback label).
+        Safe to call multiple times.
+        """
         # Remove existing view if present
         if self.view is not None:
             try:
@@ -99,7 +108,10 @@ class TrackMap3DWidget(QtWidgets.QWidget):
 
             self._gl = gl
             self.view = gl.GLViewWidget()
-            self.view.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+            self.view.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding,
+                QtWidgets.QSizePolicy.Expanding,
+            )
             self.view.setCameraPosition(distance=250)
 
             grid = gl.GLGridItem()
@@ -126,7 +138,8 @@ class TrackMap3DWidget(QtWidgets.QWidget):
     def recover_gl_context(self) -> None:
         """
         Rebuild GLViewWidget after dock float/dock.
-        Prevents shader/VBO crashes (GL_INVALID_VALUE) on some drivers (common on Windows).
+        Prevents shader/VBO crashes (GL_INVALID_VALUE)
+        on some drivers (common on Windows).
         """
         if not self._have_gl:
             return
@@ -183,9 +196,13 @@ class TrackMap3DWidget(QtWidgets.QWidget):
             self._compute_norm(base_lap, elevation_mode=self._elevation_mode)
 
         if ref is not None:
-            self._upsert_line(ref, which="ref", elevation_mode=self._elevation_mode)
+            self._upsert_line(
+                ref, which="ref", elevation_mode=self._elevation_mode
+            )
         if last is not None:
-            self._upsert_line(last, which="last", elevation_mode=self._elevation_mode)
+            self._upsert_line(
+                last, which="last", elevation_mode=self._elevation_mode
+            )
 
         # Car marker: keep it raw so it reflects what telemetry reports *now*.
         snap = session.latest_snapshot() or {}
@@ -199,20 +216,28 @@ class TrackMap3DWidget(QtWidgets.QWidget):
 
     # ---- internals ----
 
-    def _lap_points_xyz_raw(self, lap: LapData) -> List[Tuple[float, float, float]]:
+    def _lap_points_xyz_raw(
+        self, lap: LapData
+    ) -> List[Tuple[float, float, float]]:
         pts: List[Tuple[float, float, float]] = []
         for s in lap.samples:
             if abs(s.x) > 1e-6 or abs(s.z) > 1e-6:
-                pts.append((float(s.x), float(getattr(s, "y", 0.0)), float(s.z)))
+                pts.append(
+                    (float(s.x), float(getattr(s, "y", 0.0)), float(s.z))
+                )
         return pts
 
-    def _lap_points_xyz(self, lap: LapData, elevation_mode: str) -> List[Tuple[float, float, float]]:
+    def _lap_points_xyz(
+        self, lap: LapData, elevation_mode: str
+    ) -> List[Tuple[float, float, float]]:
         raw = self._lap_points_xyz_raw(lap)
         if elevation_mode != "proxy":
             return raw
         return self._elevation_proxy_xyz(raw)
 
-    def _elevation_proxy_xyz(self, raw_pts: List[Tuple[float, float, float]]) -> List[Tuple[float, float, float]]:
+    def _elevation_proxy_xyz(
+        self, raw_pts: List[Tuple[float, float, float]]
+    ) -> List[Tuple[float, float, float]]:
         """
         Build an elevation proxy from raw (x, y, z) by:
           1) robustly clipping outliers in y
@@ -290,7 +315,9 @@ class TrackMap3DWidget(QtWidgets.QWidget):
             target_y_span = 25.0
             self._y_scale = (target_y_span / y_span) * self._y_exaggeration
 
-    def _normalize_point(self, p: Tuple[float, float, float]) -> Tuple[float, float, float]:
+    def _normalize_point(
+        self, p: Tuple[float, float, float]
+    ) -> Tuple[float, float, float]:
         if self._norm_center is None:
             return p
         cx, cy, cz = self._norm_center
@@ -298,7 +325,9 @@ class TrackMap3DWidget(QtWidgets.QWidget):
         ys = self._y_scale
         return ((p[0] - cx) * s, (p[1] - cy) * ys, (p[2] - cz) * s)
 
-    def _normalize_pts(self, pts: List[Tuple[float, float, float]]) -> List[Tuple[float, float, float]]:
+    def _normalize_pts(
+        self, pts: List[Tuple[float, float, float]]
+    ) -> List[Tuple[float, float, float]]:
         return [self._normalize_point(p) for p in pts]
 
     def _grade_colors_rgba(self, raw_pts: List[Tuple[float, float, float]]):
@@ -341,12 +370,16 @@ class TrackMap3DWidget(QtWidgets.QWidget):
         rgb = np.empty((n, 3), dtype=float)
         up_mask = sign >= 0
         rgb[up_mask] = (1.0 - t[up_mask, None]) * flat + t[up_mask, None] * up
-        rgb[~up_mask] = (1.0 - t[~up_mask, None]) * flat + t[~up_mask, None] * down
+        rgb[~up_mask] = (1.0 - t[~up_mask, None]) * flat + t[
+            ~up_mask, None
+        ] * down
 
         a = np.ones((n, 1), dtype=float)
         return np.concatenate([rgb, a], axis=1)
 
-    def _upsert_line(self, lap: LapData, which: str, elevation_mode: str) -> None:
+    def _upsert_line(
+        self, lap: LapData, which: str, elevation_mode: str
+    ) -> None:
         gl = self._gl
         if gl is None or self.view is None:
             return
@@ -357,6 +390,7 @@ class TrackMap3DWidget(QtWidgets.QWidget):
             return
 
         import numpy as np
+
         pos = np.array(pts, dtype=float)
 
         if which == "ref":
@@ -378,9 +412,13 @@ class TrackMap3DWidget(QtWidgets.QWidget):
         item = getattr(self, item_attr)
         if item is None:
             if colors is not None:
-                item = gl.GLLinePlotItem(pos=pos, color=colors, width=width, antialias=True)
+                item = gl.GLLinePlotItem(
+                    pos=pos, color=colors, width=width, antialias=True
+                )
             else:
-                item = gl.GLLinePlotItem(pos=pos, color=color, width=width, antialias=True)
+                item = gl.GLLinePlotItem(
+                    pos=pos, color=color, width=width, antialias=True
+                )
             self.view.addItem(item)
             setattr(self, item_attr, item)
         else:
@@ -390,15 +428,20 @@ class TrackMap3DWidget(QtWidgets.QWidget):
                 else:
                     item.setData(pos=pos)
             except Exception:
-                # If a context hiccup happened mid-run, try to recreate this item.
+                # If a context hiccup happened mid-run, try to recreate this
+                # item.
                 try:
                     self.view.removeItem(item)
                 except Exception:
                     pass
                 if colors is not None:
-                    item = gl.GLLinePlotItem(pos=pos, color=colors, width=width, antialias=True)
+                    item = gl.GLLinePlotItem(
+                        pos=pos, color=colors, width=width, antialias=True
+                    )
                 else:
-                    item = gl.GLLinePlotItem(pos=pos, color=color, width=width, antialias=True)
+                    item = gl.GLLinePlotItem(
+                        pos=pos, color=color, width=width, antialias=True
+                    )
                 self.view.addItem(item)
                 setattr(self, item_attr, item)
 
@@ -410,10 +453,13 @@ class TrackMap3DWidget(QtWidgets.QWidget):
         p_n = self._normalize_point(p)
 
         import numpy as np
+
         pos = np.array([p_n], dtype=float)
 
         if self._car_item is None:
-            self._car_item = gl.GLScatterPlotItem(pos=pos, size=8, color=(1.0, 1.0, 1.0, 1.0))
+            self._car_item = gl.GLScatterPlotItem(
+                pos=pos, size=8, color=(1.0, 1.0, 1.0, 1.0)
+            )
             self.view.addItem(self._car_item)
         else:
             try:
@@ -424,7 +470,9 @@ class TrackMap3DWidget(QtWidgets.QWidget):
     def _autoframe(self, lap: Optional[LapData], elevation_mode: str) -> None:
         if lap is None or self.view is None:
             return
-        pts = self._normalize_pts(self._lap_points_xyz(lap, elevation_mode=elevation_mode))
+        pts = self._normalize_pts(
+            self._lap_points_xyz(lap, elevation_mode=elevation_mode)
+        )
         if not pts:
             return
 
@@ -436,6 +484,7 @@ class TrackMap3DWidget(QtWidgets.QWidget):
         cz = (min(zs) + max(zs)) / 2.0
 
         try:
-            self.view.opts["center"] = self._gl.Vector(cx, cy, cz)  # type: ignore[attr-defined]
+            center = self._gl.Vector(cx, cy, cz)  # type: ignore[attr-defined]
+            self.view.opts["center"] = center
         except Exception:
             pass

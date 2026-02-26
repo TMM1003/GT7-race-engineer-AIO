@@ -8,7 +8,8 @@ import re
 
 class SettingsTab(QtWidgets.QWidget):
     # Thesis/Research control panel
-    # Emits a dict of settings that AppController applies and records into run metadata
+    # Emits a dict of settings that AppController applies and records into run
+    # metadata
     sig_apply = QtCore.Signal(dict)
     sig_start_new_run = QtCore.Signal()
     sig_open_run_dir = QtCore.Signal()
@@ -25,7 +26,9 @@ class SettingsTab(QtWidgets.QWidget):
         layout.addLayout(form)
 
         # Research export master toggle
-        self.chk_research_enabled = QtWidgets.QCheckBox("Enable research export")
+        self.chk_research_enabled = QtWidgets.QCheckBox(
+            "Enable research export"
+        )
         self.chk_research_enabled.setChecked(True)
         form.addRow(self.chk_research_enabled)
 
@@ -56,12 +59,18 @@ class SettingsTab(QtWidgets.QWidget):
         feat_group = QtWidgets.QGroupBox("Features exported (X columns)")
         feat_layout = QtWidgets.QGridLayout(feat_group)
 
-        self.chk_speed = QtWidgets.QCheckBox("speed_kmh"); self.chk_speed.setChecked(True)
-        self.chk_throttle = QtWidgets.QCheckBox("throttle"); self.chk_throttle.setChecked(True)
-        self.chk_brake = QtWidgets.QCheckBox("brake"); self.chk_brake.setChecked(True)
-        self.chk_rpm = QtWidgets.QCheckBox("rpm"); self.chk_rpm.setChecked(True)
-        self.chk_gear = QtWidgets.QCheckBox("gear"); self.chk_gear.setChecked(True)
-        self.chk_curvature = QtWidgets.QCheckBox("curvature"); self.chk_curvature.setChecked(True)
+        self.chk_speed = QtWidgets.QCheckBox("speed_kmh")
+        self.chk_speed.setChecked(True)
+        self.chk_throttle = QtWidgets.QCheckBox("throttle")
+        self.chk_throttle.setChecked(True)
+        self.chk_brake = QtWidgets.QCheckBox("brake")
+        self.chk_brake.setChecked(True)
+        self.chk_rpm = QtWidgets.QCheckBox("rpm")
+        self.chk_rpm.setChecked(True)
+        self.chk_gear = QtWidgets.QCheckBox("gear")
+        self.chk_gear.setChecked(True)
+        self.chk_curvature = QtWidgets.QCheckBox("curvature")
+        self.chk_curvature.setChecked(True)
 
         feat_layout.addWidget(self.chk_speed, 0, 0)
         feat_layout.addWidget(self.chk_throttle, 0, 1)
@@ -72,8 +81,14 @@ class SettingsTab(QtWidgets.QWidget):
 
         layout.addWidget(feat_group)
 
-        # Optional normalization (stored in run metadata; apply in training scripts)
-        self.chk_normalize = QtWidgets.QCheckBox("Normalize features (recorded for research; apply in training scripts)")
+        # Optional normalization (stored in run metadata; apply in training
+        # scripts)
+        self.chk_normalize = QtWidgets.QCheckBox(
+            (
+                "Normalize features (recorded for research; "
+                "apply in training scripts)"
+            )
+        )
         self.chk_normalize.setChecked(False)
         layout.addWidget(self.chk_normalize)
 
@@ -90,10 +105,14 @@ class SettingsTab(QtWidgets.QWidget):
         self.chk_export_corners = QtWidgets.QCheckBox("Export corners")
         self.chk_export_corners.setChecked(True)
 
-        self.chk_delta_profile = QtWidgets.QCheckBox("Export delta-time profile baseline")
+        self.chk_delta_profile = QtWidgets.QCheckBox(
+            "Export delta-time profile baseline"
+        )
         self.chk_delta_profile.setChecked(True)
 
-        self.chk_corner_rows = QtWidgets.QCheckBox("Export corner coaching rows baseline")
+        self.chk_corner_rows = QtWidgets.QCheckBox(
+            "Export corner coaching rows baseline"
+        )
         self.chk_corner_rows.setChecked(True)
 
         exp_layout.addWidget(self.chk_npz)
@@ -154,7 +173,9 @@ class SettingsTab(QtWidgets.QWidget):
         alias_row.addWidget(self.btn_autofill_alias)
 
         self.edit_notes = QtWidgets.QTextEdit()
-        self.edit_notes.setPlaceholderText("Optional notes: tires, BoP, setup, objective, conditions, etc.")
+        self.edit_notes.setPlaceholderText(
+            "Optional notes: tires, BoP, setup, objective, conditions, etc."
+        )
         self.edit_notes.setFixedHeight(70)
 
         fm = QtWidgets.QFormLayout()
@@ -166,9 +187,13 @@ class SettingsTab(QtWidgets.QWidget):
 
         btn_row = QtWidgets.QHBoxLayout()
         self.btn_apply_meta = QtWidgets.QPushButton("Apply to current run")
-        self.btn_new_run_with_meta = QtWidgets.QPushButton("Start new run with metadata")
+        self.btn_new_run_with_meta = QtWidgets.QPushButton(
+            "Start new run with metadata"
+        )
         self.btn_apply_meta.clicked.connect(self._emit_apply_run_metadata)
-        self.btn_new_run_with_meta.clicked.connect(self._emit_start_new_run_with_meta)
+        self.btn_new_run_with_meta.clicked.connect(
+            self._emit_start_new_run_with_meta
+        )
         btn_row.addWidget(self.btn_apply_meta)
         btn_row.addWidget(self.btn_new_run_with_meta)
         btn_row.addStretch(1)
@@ -176,21 +201,27 @@ class SettingsTab(QtWidgets.QWidget):
 
         layout.addWidget(meta_box)
 
-
         self._gt7db = None
         self._car_id_lookup_enabled = False
         self._last_auto_car_name: Optional[str] = None
         self._detected_car_id: Optional[int] = None
         self._detected_car_name: Optional[str] = None
 
-        self.chk_auto_detect_car = QtWidgets.QCheckBox("Auto-detect car from telemetry (temporarily disabled)")
+        self.chk_auto_detect_car = QtWidgets.QCheckBox(
+            "Auto-detect car from telemetry (temporarily disabled)"
+        )
         self.chk_auto_detect_car.setChecked(False)
         self.chk_auto_detect_car.setEnabled(False)
         self.chk_auto_detect_car.setToolTip(
-            "Disabled while GT7 telemetry Car IDs are being remapped to a verified CSV."
+            (
+                "Disabled while GT7 telemetry Car IDs are being "
+                "remapped to a verified CSV."
+            )
         )
 
-        self.lbl_detected_car = QtWidgets.QLabel("Telemetry car ID: - (lookup disabled)")
+        self.lbl_detected_car = QtWidgets.QLabel(
+            "Telemetry car ID: - (lookup disabled)"
+        )
         self.lbl_detected_car.setWordWrap(True)
         self.lbl_detected_car.setStyleSheet("color: #888;")  # subtle
 
@@ -198,7 +229,7 @@ class SettingsTab(QtWidgets.QWidget):
         form.addRow("", self.lbl_detected_car)
 
         self.edit_car_name.textEdited.connect(self._on_car_name_user_edited)
-        
+
         # Buttons
         btns = QtWidgets.QHBoxLayout()
         layout.addLayout(btns)
@@ -221,8 +252,9 @@ class SettingsTab(QtWidgets.QWidget):
 
         btns.addStretch(1)
         layout.addStretch(1)
-        
+
         self.btn_export_dataset.clicked.connect(self._on_export_clicked)
+
     def set_current_run_info(
         self,
         run_id: str,
@@ -237,8 +269,11 @@ class SettingsTab(QtWidgets.QWidget):
         self._lbl_car.setText(car or "—")
         self._lbl_alias.setText(alias or "—")
 
-    def set_reference_info(self, ref_lap: int | None, ref_time_ms: int | None) -> None:
-        # Optional: expand later if you want to show reference details in this tab.
+    def set_reference_info(
+        self, ref_lap: int | None, ref_time_ms: int | None
+    ) -> None:
+        # Optional: expand later if you want to show reference details in this
+        # tab.
         return
 
     def _collect_run_metadata(self) -> dict:
@@ -268,6 +303,7 @@ class SettingsTab(QtWidgets.QWidget):
         parts = [p for p in [slug(track), slug(car)] if p]
         if parts:
             self.edit_run_alias.setText("_".join(parts))
+
     # src/ui/settings_tab.py
 
     def set_gt7_database(self, db) -> None:
@@ -281,7 +317,8 @@ class SettingsTab(QtWidgets.QWidget):
     def update_from_snapshot(self, snap: dict) -> None:
         """
         Called from the main UI update loop.
-        Car-ID-based lookup is intentionally disabled until a validated ID CSV exists.
+        Car-ID-based lookup is intentionally disabled until
+        a validated ID CSV exists.
         """
         car_id = snap.get("car_id")
         try:
@@ -289,13 +326,18 @@ class SettingsTab(QtWidgets.QWidget):
         except Exception:
             car_id_int = None
 
-        # Temporarily disable CSV/lookup driven car detection until IDs are validated.
+        # Temporarily disable CSV/lookup driven car detection until IDs are
+        # validated.
         self._detected_car_id = car_id_int
         self._detected_car_name = None
         if car_id_int is None:
-            self.lbl_detected_car.setText("Telemetry car ID: - (lookup disabled)")
+            self.lbl_detected_car.setText(
+                "Telemetry car ID: - (lookup disabled)"
+            )
         else:
-            self.lbl_detected_car.setText(f"Telemetry car ID: {car_id_int} (lookup disabled)")
+            self.lbl_detected_car.setText(
+                f"Telemetry car ID: {car_id_int} (lookup disabled)"
+            )
         return
 
         # Update detected fields
@@ -313,9 +355,13 @@ class SettingsTab(QtWidgets.QWidget):
         if car_id_int is None:
             self.lbl_detected_car.setText("Detected car: —")
         elif detected_name:
-            self.lbl_detected_car.setText(f"Detected car: {detected_name} (ID {car_id_int})")
+            self.lbl_detected_car.setText(
+                f"Detected car: {detected_name} (ID {car_id_int})"
+            )
         else:
-            self.lbl_detected_car.setText(f"Detected car: Unknown (ID {car_id_int})")
+            self.lbl_detected_car.setText(
+                f"Detected car: Unknown (ID {car_id_int})"
+            )
 
         # Auto-fill car name (non-clobbering)
         if not self.chk_auto_detect_car.isChecked():
@@ -327,8 +373,12 @@ class SettingsTab(QtWidgets.QWidget):
 
         # Only auto-fill if:
         # - field is empty, OR
-        # - field equals the last value we auto-filled (so we can keep it updated)
-        if (not current) or (self._last_auto_car_name is not None and current == self._last_auto_car_name):
+        # - field equals the last value we auto-filled
+        #   (so we can keep it updated)
+        if (not current) or (
+            self._last_auto_car_name is not None
+            and current == self._last_auto_car_name
+        ):
             self.edit_car_name.setText(detected_name)
             self._last_auto_car_name = detected_name
 
@@ -353,12 +403,13 @@ class SettingsTab(QtWidgets.QWidget):
         # ✅ new stable metadata
         return meta
 
-        
     def _on_export_clicked(self) -> None:
         self.sig_export_dataset.emit()
-    
+
     def _browse_output_root(self) -> None:
-        d = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose output folder", self.edit_output_root.text())
+        d = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Choose output folder", self.edit_output_root.text()
+        )
         if d:
             self.edit_output_root.setText(d)
 
@@ -388,7 +439,9 @@ class SettingsTab(QtWidgets.QWidget):
             "export_corners": bool(self.chk_export_corners.isChecked()),
             "export_delta_profile": bool(self.chk_delta_profile.isChecked()),
             "export_corner_rows": bool(self.chk_corner_rows.isChecked()),
-            "ui_rate_hz": 60 if self.combo_ui_rate.currentText().startswith("60") else 10,
+            "ui_rate_hz": 60
+            if self.combo_ui_rate.currentText().startswith("60")
+            else 10,
             "buffer_samples": int(self.spin_buffer_samples.value()),
         }
         self.sig_apply.emit(settings)

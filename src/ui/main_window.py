@@ -14,6 +14,7 @@ from src.ui.settings_tab import SettingsTab
 from pathlib import Path
 from src.gt7db.loader import GT7Database
 
+
 class MainWindow(QtWidgets.QMainWindow):
     sig_force_ip = QtCore.Signal(str)
     sig_speak_now = QtCore.Signal()
@@ -56,7 +57,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_tab = SettingsTab()
         self.tabs.addTab(self.settings_tab, "Research/Config")
 
-        
         self._gt7db = None
         try:
             db_root = Path("src/gt7db")
@@ -66,23 +66,33 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             # best-effort: app should still run even if db isn't present
             self._gt7db = None
-        
+
         # Forward signals
         self.settings_tab.sig_apply.connect(self.sig_apply_settings.emit)
-        self.settings_tab.sig_start_new_run.connect(self.sig_start_new_run.emit)
+        self.settings_tab.sig_start_new_run.connect(
+            self.sig_start_new_run.emit
+        )
         self.settings_tab.sig_open_run_dir.connect(self.sig_open_run_dir.emit)
 
         # Run metadata (SettingsTab -> MainWindow)
         if hasattr(self.settings_tab, "sig_apply_run_metadata"):
-            self.settings_tab.sig_apply_run_metadata.connect(self.sig_apply_run_metadata.emit)
+            self.settings_tab.sig_apply_run_metadata.connect(
+                self.sig_apply_run_metadata.emit
+            )
         if hasattr(self.settings_tab, "sig_start_new_run_with_meta"):
-            self.settings_tab.sig_start_new_run_with_meta.connect(self.sig_start_new_run_with_meta.emit)
+            self.settings_tab.sig_start_new_run_with_meta.connect(
+                self.sig_start_new_run_with_meta.emit
+            )
 
         # Export dataset signal (new)
         if hasattr(self.settings_tab, "sig_export_dataset"):
-            self.settings_tab.sig_export_dataset.connect(self.sig_export_dataset.emit)
+            self.settings_tab.sig_export_dataset.connect(
+                self.sig_export_dataset.emit
+            )
         elif hasattr(self.settings_tab, "btn_export_dataset"):
-            self.settings_tab.btn_export_dataset.clicked.connect(self.sig_export_dataset.emit)
+            self.settings_tab.btn_export_dataset.clicked.connect(
+                self.sig_export_dataset.emit
+            )
 
         # Dockable Panels
         self.track_map = TrackMapWidget()
@@ -93,13 +103,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # Standardize dock attribute names
         self.dock_track = self._make_dock("Track Map", self.track_map)
         self.dock_graphs = self._make_dock("Graphs", self.graphs)
-        self.dock_graphs_overlay = self._make_dock("Graphs (Overlay)", self.graphs_overlay)
+        self.dock_graphs_overlay = self._make_dock(
+            "Graphs (Overlay)", self.graphs_overlay
+        )
         self.dock_corners = self._make_dock("Corners", self.corner_table)
 
         # Add docks to the right area
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_track)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_graphs_overlay)
+        self.addDockWidget(
+            QtCore.Qt.RightDockWidgetArea, self.dock_graphs_overlay
+        )
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_corners)
 
         # Tabify into one dock stack
@@ -115,8 +129,12 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
         # Theme preference + menu
-        self._settings = QtCore.QSettings("GT7RaceEngineer", "GT7RaceEngineerApp")
-        theme_default = self._settings.value("ui/theme", "studio_gray", type=str)
+        self._settings = QtCore.QSettings(
+            "GT7RaceEngineer", "GT7RaceEngineerApp"
+        )
+        theme_default = self._settings.value(
+            "ui/theme", "studio_gray", type=str
+        )
 
         menubar = self.menuBar()
         view_menu = menubar.addMenu("View")
@@ -144,9 +162,15 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._theme_actions["studio_gray"].setChecked(True)
 
-        self._apply_theme(theme_default if theme_default in self._theme_actions else "studio_gray")
+        self._apply_theme(
+            theme_default
+            if theme_default in self._theme_actions
+            else "studio_gray"
+        )
+
         def set_controller(self, controller: object) -> None:
             self._controller = controller
+
         def set_current_run_info(
             self,
             run_id: str,
@@ -155,14 +179,24 @@ class MainWindow(QtWidgets.QMainWindow):
             car: str | None = None,
             alias: str | None = None,
         ) -> None:
-            if hasattr(self, "settings_tab") and hasattr(self.settings_tab, "set_current_run_info"):
-                self.settings_tab.set_current_run_info(run_id, run_dir, track=track, car=car, alias=alias)
+            if hasattr(self, "settings_tab") and hasattr(
+                self.settings_tab, "set_current_run_info"
+            ):
+                self.settings_tab.set_current_run_info(
+                    run_id, run_dir, track=track, car=car, alias=alias
+                )
 
-        def set_reference_info(self, ref_lap: int | None, ref_time_ms: int | None) -> None:
-            if hasattr(self, "settings_tab") and hasattr(self.settings_tab, "set_reference_info"):
+        def set_reference_info(
+            self, ref_lap: int | None, ref_time_ms: int | None
+        ) -> None:
+            if hasattr(self, "settings_tab") and hasattr(
+                self.settings_tab, "set_reference_info"
+            ):
                 self.settings_tab.set_reference_info(ref_lap, ref_time_ms)
 
-    def _make_dock(self, title: str, widget: QtWidgets.QWidget) -> QtWidgets.QDockWidget:
+    def _make_dock(
+        self, title: str, widget: QtWidgets.QWidget
+    ) -> QtWidgets.QDockWidget:
         dock = QtWidgets.QDockWidget(title, self)
         dock.setWidget(widget)
         dock.setObjectName(title.replace(" ", "_").lower())
@@ -191,14 +225,24 @@ class MainWindow(QtWidgets.QMainWindow):
         if key == "dark":
             palette = QtGui.QPalette()
             palette.setColor(QtGui.QPalette.Window, QtGui.QColor(30, 30, 30))
-            palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(220, 220, 220))
+            palette.setColor(
+                QtGui.QPalette.WindowText, QtGui.QColor(220, 220, 220)
+            )
             palette.setColor(QtGui.QPalette.Base, QtGui.QColor(20, 20, 20))
-            palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(30, 30, 30))
+            palette.setColor(
+                QtGui.QPalette.AlternateBase, QtGui.QColor(30, 30, 30)
+            )
             palette.setColor(QtGui.QPalette.Text, QtGui.QColor(220, 220, 220))
             palette.setColor(QtGui.QPalette.Button, QtGui.QColor(45, 45, 45))
-            palette.setColor(QtGui.QPalette.ButtonText, QtGui.QColor(220, 220, 220))
-            palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(70, 70, 120))
-            palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
+            palette.setColor(
+                QtGui.QPalette.ButtonText, QtGui.QColor(220, 220, 220)
+            )
+            palette.setColor(
+                QtGui.QPalette.Highlight, QtGui.QColor(70, 70, 120)
+            )
+            palette.setColor(
+                QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255)
+            )
             app.setPalette(palette)
         else:
             app.setPalette(app.style().standardPalette())
@@ -299,8 +343,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return s if s else default
 
         try:
-            self.val_diag_connected.setText("Yes" if bool(diag.get("connected", False)) else "No")
-            self.val_diag_live.setText("Yes" if bool(diag.get("in_race", False)) else "No")
+            self.val_diag_connected.setText(
+                "Yes" if bool(diag.get("connected", False)) else "No"
+            )
+            self.val_diag_live.setText(
+                "Yes" if bool(diag.get("in_race", False)) else "No"
+            )
             self.val_diag_mode.setText(t(diag.get("mode")))
             self.val_diag_target_ip.setText(t(diag.get("configured_ip")))
             self.val_diag_active_ip.setText(t(diag.get("active_ip")))
@@ -313,14 +361,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
             self.val_diag_seq.setText(t(diag.get("telemetry_seq")))
             self.val_diag_pkg.setText(t(diag.get("package_id")))
-            self.val_diag_paused.setText("Yes" if bool(diag.get("paused", False)) else "No")
+            self.val_diag_paused.setText(
+                "Yes" if bool(diag.get("paused", False)) else "No"
+            )
             self.val_diag_send_port.setText(t(diag.get("send_port")))
             self.val_diag_recv_port.setText(t(diag.get("recv_port")))
             self.val_diag_bound_port.setText(t(diag.get("bound_recv_port")))
-            self.val_diag_error.setText(t(diag.get("connection_error"), default="None"))
-            self.val_diag_rx_datagrams.setText(t(diag.get("rx_datagrams"), default="0"))
-            self.val_diag_rx_valid.setText(t(diag.get("rx_valid_packets"), default="0"))
-            self.val_diag_tx_hb.setText(t(diag.get("tx_heartbeats"), default="0"))
+            self.val_diag_error.setText(
+                t(diag.get("connection_error"), default="None")
+            )
+            self.val_diag_rx_datagrams.setText(
+                t(diag.get("rx_datagrams"), default="0")
+            )
+            self.val_diag_rx_valid.setText(
+                t(diag.get("rx_valid_packets"), default="0")
+            )
+            self.val_diag_tx_hb.setText(
+                t(diag.get("tx_heartbeats"), default="0")
+            )
             self.val_diag_last_sender.setText(t(diag.get("last_sender_ip")))
         except Exception:
             pass
@@ -343,7 +401,9 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
-    def update_visualizations(self, session: TelemetrySession, snap: dict) -> None:
+    def update_visualizations(
+        self, session: TelemetrySession, snap: dict
+    ) -> None:
         # Update dock widgets using session buffers
         n = 300
         self.track_map.update_from_session(session, n=n)

@@ -7,16 +7,17 @@ import pyqtgraph as pg
 
 # Keep colors consistent across all graph views.
 PENS = {
-    "speed": pg.mkPen((52, 152, 219), width=2),     # blue
-    "rpm": pg.mkPen((155, 89, 182), width=2),       # purple
+    "speed": pg.mkPen((52, 152, 219), width=2),  # blue
+    "rpm": pg.mkPen((155, 89, 182), width=2),  # purple
     "throttle": pg.mkPen((46, 204, 113), width=2),  # green
-    "brake": pg.mkPen((231, 76, 60), width=2),      # red
+    "brake": pg.mkPen((231, 76, 60), width=2),  # red
 }
 
 
 def _time_axis(samples, window_s: float) -> tuple[list[float], int]:
     """
-    Return (xs, start_index) where xs are seconds relative to the latest sample.
+    Return (xs, start_index), where xs are seconds
+    relative to the latest sample.
     xs will be negative -> 0 over the window.
     """
     if not samples:
@@ -88,8 +89,10 @@ class GraphsWidget(QtWidgets.QWidget):
 
 class GraphsOverlayWidget(QtWidgets.QWidget):
     """
-    Second graphs tab: overlays four signals onto one plot with consistent coloring + legend.
-    Since units differ wildly, Speed & RPM are normalized to 0–100 for visual comparison.
+    Second graphs tab: overlays four signals onto one plot
+    with consistent coloring and a legend.
+    Since units differ, speed and RPM are normalized to 0-100
+    for visual comparison.
     """
 
     def __init__(self, window_s: float = 60.0):
@@ -98,21 +101,34 @@ class GraphsOverlayWidget(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
 
-        self.plot = pg.PlotWidget(title="Overlay (normalized) — Speed, RPM, Throttle, Brake")
+        self.plot = pg.PlotWidget(
+            title="Overlay (normalized) — Speed, RPM, Throttle, Brake"
+        )
         self.plot.showGrid(x=True, y=True, alpha=0.2)
         self.plot.setLabel("left", "normalized", units="")
         self.plot.setLabel("bottom", "time", units="s")
         self.plot.addLegend(offset=(10, 10))
 
-        self._c_speed = self.plot.plot([], [], pen=PENS["speed"], name="Speed (norm)")
-        self._c_rpm = self.plot.plot([], [], pen=PENS["rpm"], name="RPM (norm)")
-        self._c_thr = self.plot.plot([], [], pen=PENS["throttle"], name="Throttle (0–100)")
-        self._c_brk = self.plot.plot([], [], pen=PENS["brake"], name="Brake (0–100)")
+        self._c_speed = self.plot.plot(
+            [], [], pen=PENS["speed"], name="Speed (norm)"
+        )
+        self._c_rpm = self.plot.plot(
+            [], [], pen=PENS["rpm"], name="RPM (norm)"
+        )
+        self._c_thr = self.plot.plot(
+            [], [], pen=PENS["throttle"], name="Throttle (0–100)"
+        )
+        self._c_brk = self.plot.plot(
+            [], [], pen=PENS["brake"], name="Brake (0–100)"
+        )
 
         layout.addWidget(self.plot)
 
         note = QtWidgets.QLabel(
-            "Note: Speed and RPM are normalized to 0–100 so they can be compared visually with throttle/brake."
+            (
+                "Note: Speed and RPM are normalized to 0-100 so they "
+                "can be compared visually with throttle/brake."
+            )
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #7f8c8d;")

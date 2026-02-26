@@ -27,7 +27,8 @@ def mae(a: List[float], b: List[float]) -> Optional[float]:
 def pearson_r(a: List[float], b: List[float]) -> Optional[float]:
     """
     Pearson correlation coefficient between two equal-length lists.
-    Useful for "agreement" between model per-distance score and heuristic delta profile.
+    Useful for agreement between model per-distance score and
+    heuristic delta profile.
     """
     if not a or not b or len(a) != len(b):
         return None
@@ -48,10 +49,13 @@ def pearson_r(a: List[float], b: List[float]) -> Optional[float]:
     return num / math.sqrt(da * db)
 
 
-def topk_overlap(a: List[float], b: List[float], k: int = 20) -> Optional[float]:
+def topk_overlap(
+    a: List[float], b: List[float], k: int = 20
+) -> Optional[float]:
     """
     Measures overlap between top-k indices of two score arrays.
-    Useful for "error localization along lap distance": do the same bins light up?
+    Useful for error localization along lap distance:
+    do the same bins light up?
     Returns overlap ratio in [0,1].
     """
     if not a or not b or len(a) != len(b) or k <= 0:

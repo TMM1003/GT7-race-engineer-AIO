@@ -32,7 +32,9 @@ def _read_json(path: Path) -> Any:
         return json.load(f)
 
 
-def _update_manifest(run_dir: Path, entry: Dict[str, Any], *, section: str) -> None:
+def _update_manifest(
+    run_dir: Path, entry: Dict[str, Any], *, section: str
+) -> None:
     """
     Append an entry to manifest.json.
     """
@@ -94,18 +96,20 @@ def _export_corner_tensors(
 
         Xc = X_lap[s:e]
         cmeta = dict(meta)
-        cmeta.update({
-            "corner_index": i,
-            "corner_start_idx": s,
-            "corner_end_idx": e,
-            "corner_direction": seg.get("direction"),
-            "corner_strength": seg.get("strength"),
-            "loss_ms": r.get("loss_ms"),
-            "brake_start_delta_m": r.get("brake_start_delta_m"),
-            "throttle_on_delta_m": r.get("throttle_on_delta_m"),
-            "min_speed_delta_kmh": r.get("min_speed_delta_kmh"),
-            "exit_speed_delta_kmh": r.get("exit_speed_delta_kmh"),
-        })
+        cmeta.update(
+            {
+                "corner_index": i,
+                "corner_start_idx": s,
+                "corner_end_idx": e,
+                "corner_direction": seg.get("direction"),
+                "corner_strength": seg.get("strength"),
+                "loss_ms": r.get("loss_ms"),
+                "brake_start_delta_m": r.get("brake_start_delta_m"),
+                "throttle_on_delta_m": r.get("throttle_on_delta_m"),
+                "min_speed_delta_kmh": r.get("min_speed_delta_kmh"),
+                "exit_speed_delta_kmh": r.get("exit_speed_delta_kmh"),
+            }
+        )
 
         json_rel = f"corners/corner_{lap_num:04d}_{i:02d}.json"
         npz_rel = f"corners/corner_{lap_num:04d}_{i:02d}.npz"
@@ -121,15 +125,21 @@ def _export_corner_tensors(
             meta_str = json.dumps(cmeta, sort_keys=True)
             _np.savez_compressed(npz_path, X=arr, meta_json=meta_str)
 
-        exported.append({
-            "lap_num": int(lap_num),
-            "corner_index": int(i),
-            "paths": {
-                "json": (json_rel if export_json_always else None),
-                "npz": (npz_rel if (export_npz_if_available and _np is not None) else None),
-            },
-            "timestamp_utc": _utc_iso(),
-        })
+        exported.append(
+            {
+                "lap_num": int(lap_num),
+                "corner_index": int(i),
+                "paths": {
+                    "json": (json_rel if export_json_always else None),
+                    "npz": (
+                        npz_rel
+                        if (export_npz_if_available and _np is not None)
+                        else None
+                    ),
+                },
+                "timestamp_utc": _utc_iso(),
+            }
+        )
 
     return exported
 
@@ -166,17 +176,31 @@ def _lap_baselines(
             seg = r.get("seg")
             serial_rows.append(
                 {
-                    "seg": None if seg is None else {
+                    "seg": None
+                    if seg is None
+                    else {
                         "start_idx": int(seg.start_idx),
                         "end_idx": int(seg.end_idx),
                         "direction": int(seg.direction),
                         "strength": float(seg.strength),
                     },
                     "loss_ms": float(r.get("loss_ms", 0.0)),
-                    "brake_start_delta_m": (None if r.get("brake_start_delta_m") is None else float(r["brake_start_delta_m"])),
-                    "throttle_on_delta_m": (None if r.get("throttle_on_delta_m") is None else float(r["throttle_on_delta_m"])),
-                    "min_speed_delta_kmh": float(r.get("min_speed_delta_kmh", 0.0)),
-                    "exit_speed_delta_kmh": float(r.get("exit_speed_delta_kmh", 0.0)),
+                    "brake_start_delta_m": (
+                        None
+                        if r.get("brake_start_delta_m") is None
+                        else float(r["brake_start_delta_m"])
+                    ),
+                    "throttle_on_delta_m": (
+                        None
+                        if r.get("throttle_on_delta_m") is None
+                        else float(r["throttle_on_delta_m"])
+                    ),
+                    "min_speed_delta_kmh": float(
+                        r.get("min_speed_delta_kmh", 0.0)
+                    ),
+                    "exit_speed_delta_kmh": float(
+                        r.get("exit_speed_delta_kmh", 0.0)
+                    ),
                 }
             )
         out["corner_rows"] = serial_rows
@@ -198,9 +222,11 @@ def export_lap_bundle(
     """
     Exports a single lap as:
       - laps/lap_<lapnum>.json  (always if export_json_always)
-      - laps/lap_<lapnum>.npz   (if numpy available and export_npz_if_available)
+      - laps/lap_<lapnum>.npz
+        (if numpy available and export_npz_if_available)
       - baselines/lap_<lapnum>_vs_ref.json  (if export_baselines)
-      - corners/corner_<lapnum>_<corner>.{json,npz} (if export_corners and corner_rows exist)
+      - corners/corner_<lapnum>_<corner>.{json,npz}
+        (if export_corners and corner_rows exist)
     Returns (json_path, npz_path, baseline_path)
     """
     run_dir = Path(run_dir)
@@ -237,8 +263,12 @@ def export_lap_bundle(
             "lap_num": int(lap.lap_num),
             "lap_time_ms": int(getattr(lap, "lap_time_ms", 0) or 0),
             "paths": {
-                "json": f"laps/{json_path.name}" if export_json_always else None,
-                "npz": f"laps/{npz_path.name}" if (npz_path is not None) else None,
+                "json": f"laps/{json_path.name}"
+                if export_json_always
+                else None,
+                "npz": f"laps/{npz_path.name}"
+                if (npz_path is not None)
+                else None,
             },
             "timestamp_utc": _utc_iso(),
         },

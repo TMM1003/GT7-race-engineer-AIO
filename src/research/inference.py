@@ -11,9 +11,10 @@ from typing import Any, Dict, Optional
 @dataclass
 class InferenceResult:
     # Example fields; adapt to your model outputs
-    lap_score: Optional[float] = None          # e.g., probability "good lap"
-    anomaly_score: Optional[float] = None      # e.g., reconstruction error
-    per_distance_score: Optional[list[float]] = None  # length N, for localization
+    lap_score: Optional[float] = None  # e.g., probability "good lap"
+    anomaly_score: Optional[float] = None  # e.g., reconstruction error
+    # length N, for localization
+    per_distance_score: Optional[list[float]] = None
     notes: Optional[str] = None
 
 
@@ -24,6 +25,7 @@ class ModelBundle:
       - joblib.load(...)
       - onnxruntime session
     """
+
     def __init__(self, path: Path):
         self.path = Path(path)
         self.kind = self.path.suffix.lower()
@@ -44,7 +46,11 @@ def load_model_if_present(path: str | Path) -> Optional[ModelBundle]:
     return b
 
 
-def infer_on_lap(model: Optional[ModelBundle], X_lap: list[list[float]], meta: Dict[str, Any]) -> Optional[InferenceResult]:
+def infer_on_lap(
+    model: Optional[ModelBundle],
+    X_lap: list[list[float]],
+    meta: Dict[str, Any],
+) -> Optional[InferenceResult]:
     """
     Runtime inference entrypoint for the app.
     If no model is loaded, returns None.
@@ -58,5 +64,7 @@ def infer_on_lap(model: Optional[ModelBundle], X_lap: list[list[float]], meta: D
         lap_score=None,
         anomaly_score=None,
         per_distance_score=None,
-        notes=f"Model placeholder loaded from {model.path.name}, but inference not implemented yet.",
+        notes=f"Model placeholder loaded from {
+            model.path.name
+        }, but inference not implemented yet.",
     )

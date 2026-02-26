@@ -72,8 +72,6 @@ class GT7Database:
     def best_match_venue(self, name: str) -> Optional[Venue]:
         return self._venues_by_name.get(_norm(name))
 
-
-
     @classmethod
     def load(cls, db_root: Path) -> "GT7Database":
         cars_path = db_root / "gt7_car.csv"

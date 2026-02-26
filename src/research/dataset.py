@@ -142,7 +142,9 @@ def _integral(vals: Sequence[float]) -> float:
     return float(sum(good)) if good else float("nan")
 
 
-def _summarize_X(X: List[List[float]], features: Sequence[str]) -> Dict[str, Any]:
+def _summarize_X(
+    X: List[List[float]], features: Sequence[str]
+) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     if not X:
         out["corner_len"] = 0
@@ -190,14 +192,28 @@ def _summarize_X(X: List[List[float]], features: Sequence[str]) -> Dict[str, Any
 
     curv = cols.get("curvature", [])
     if curv:
-        out["curvature_abs_mean"] = _nanmean([abs(v) if (v == v and not math.isinf(v)) else float("nan") for v in curv])
-        out["curvature_abs_max"] = _nanmax([abs(v) if (v == v and not math.isinf(v)) else float("nan") for v in curv])
+        out["curvature_abs_mean"] = _nanmean(
+            [
+                abs(v) if (v == v and not math.isinf(v)) else float("nan")
+                for v in curv
+            ]
+        )
+        out["curvature_abs_max"] = _nanmax(
+            [
+                abs(v) if (v == v and not math.isinf(v)) else float("nan")
+                for v in curv
+            ]
+        )
         out["curvature_mean"] = _nanmean(curv)
 
     # Event-ish indices (normalized 0..1 within corner)
     if brk:
         i_brk_on = _first_index_where(brk, lambda v: v > 0.1)
-        out["brake_onset_rel"] = (i_brk_on / max(1, len(brk) - 1)) if i_brk_on is not None else float("nan")
+        out["brake_onset_rel"] = (
+            (i_brk_on / max(1, len(brk) - 1))
+            if i_brk_on is not None
+            else float("nan")
+        )
         i_brk_off = _first_index_where(list(reversed(brk)), lambda v: v > 0.1)
         if i_brk_off is not None:
             idx = len(brk) - 1 - i_brk_off
@@ -207,7 +223,11 @@ def _summarize_X(X: List[List[float]], features: Sequence[str]) -> Dict[str, Any
 
     if thr:
         i_thr_on = _first_index_where(thr, lambda v: v > 0.1)
-        out["throttle_onset_rel"] = (i_thr_on / max(1, len(thr) - 1)) if i_thr_on is not None else float("nan")
+        out["throttle_onset_rel"] = (
+            (i_thr_on / max(1, len(thr) - 1))
+            if i_thr_on is not None
+            else float("nan")
+        )
 
     return out
 
@@ -222,7 +242,10 @@ def _should_skip_corner(meta: Dict[str, Any]) -> Tuple[bool, str]:
     if lap_time_ms != lap_time_ms or lap_time_ms <= 0:
         return True, "partial_or_unknown_lap_time"
 
-    if _safe_int(meta.get("corner_start_idx")) < 0 or _safe_int(meta.get("corner_end_idx")) < 0:
+    if (
+        _safe_int(meta.get("corner_start_idx")) < 0
+        or _safe_int(meta.get("corner_end_idx")) < 0
+    ):
         return True, "missing_indices"
 
     return False, "ok"
@@ -257,7 +280,12 @@ def build_corner_dataset(
             run_meta = {}
 
     schema_hash = run_meta.get("schema_hash")
-    tn = track_name or run_meta.get("track_name") or run_meta.get("track") or None
+    tn = (
+        track_name
+        or run_meta.get("track_name")
+        or run_meta.get("track")
+        or None
+    )
 
     rows: List[Dict[str, Any]] = []
 
@@ -304,7 +332,14 @@ def build_corner_dataset(
 
         features = meta.get("features")
         if not isinstance(features, list) or not features:
-            features = ["speed_kmh", "throttle", "brake", "rpm", "gear", "curvature"]
+            features = [
+                "speed_kmh",
+                "throttle",
+                "brake",
+                "rpm",
+                "gear",
+                "curvature",
+            ]
 
         row: Dict[str, Any] = {
             "run_id": run_meta.get("run_id") or meta.get("run_id"),
@@ -312,8 +347,12 @@ def build_corner_dataset(
             "track_name": tn,
             "car_name": run_meta.get("car_name"),
             "notes": run_meta.get("notes"),
-            "lap_num": _safe_int(meta.get("lap_num", lap_num), default=lap_num),
-            "corner_index": _safe_int(meta.get("corner_index", corner_index), default=corner_index),
+            "lap_num": _safe_int(
+                meta.get("lap_num", lap_num), default=lap_num
+            ),
+            "corner_index": _safe_int(
+                meta.get("corner_index", corner_index), default=corner_index
+            ),
             "corner_uid": _corner_uid(tn, corner_index),
             "corner_direction": meta.get("corner_direction"),
             "corner_strength": _safe_float(meta.get("corner_strength")),
@@ -321,24 +360,40 @@ def build_corner_dataset(
             "corner_end_idx": _safe_int(meta.get("corner_end_idx")),
             "n_bins": _safe_int(meta.get("n_bins")),
             "sampling_hz": _safe_int(meta.get("sampling_hz")),
-            "schema_version": int(run_meta.get("schema_version") or SCHEMA_VERSION),
-            "schema_hash": (schema_hash if isinstance(schema_hash, str) else None),
+            "schema_version": int(
+                run_meta.get("schema_version") or SCHEMA_VERSION
+            ),
+            "schema_hash": (
+                schema_hash if isinstance(schema_hash, str) else None
+            ),
             "reference_locked": bool(run_meta.get("reference_locked", False)),
             "reference_lap_num": run_meta.get("reference_lap_num"),
         }
 
-        row.update({
-            "loss_ms": _safe_float(meta.get("loss_ms")),
-            "brake_start_delta_m": _safe_float(meta.get("brake_start_delta_m")),
-            "throttle_on_delta_m": _safe_float(meta.get("throttle_on_delta_m")),
-            "min_speed_delta_kmh": _safe_float(meta.get("min_speed_delta_kmh")),
-            "exit_speed_delta_kmh": _safe_float(meta.get("exit_speed_delta_kmh")),
-        })
+        row.update(
+            {
+                "loss_ms": _safe_float(meta.get("loss_ms")),
+                "brake_start_delta_m": _safe_float(
+                    meta.get("brake_start_delta_m")
+                ),
+                "throttle_on_delta_m": _safe_float(
+                    meta.get("throttle_on_delta_m")
+                ),
+                "min_speed_delta_kmh": _safe_float(
+                    meta.get("min_speed_delta_kmh")
+                ),
+                "exit_speed_delta_kmh": _safe_float(
+                    meta.get("exit_speed_delta_kmh")
+                ),
+            }
+        )
 
-        row.update({
-            "lap_time_ms": _safe_float(meta.get("lap_time_ms")),
-            "lap_distance_m": _safe_float(meta.get("lap_distance_m")),
-        })
+        row.update(
+            {
+                "lap_time_ms": _safe_float(meta.get("lap_time_ms")),
+                "lap_distance_m": _safe_float(meta.get("lap_distance_m")),
+            }
+        )
 
         row.update(_summarize_X(X, features))
 
@@ -364,29 +419,67 @@ def build_corner_dataset(
 
         # Deterministic column order (stable)
         preferred = [
-            "run_id", "run_alias", "track_name", "car_name", "notes",
-            "schema_version", "schema_hash",
-            "reference_locked", "reference_lap_num",
-            "lap_num", "corner_index", "corner_uid", "corner_direction", "corner_strength",
-            "corner_start_idx", "corner_end_idx",
-            "n_bins", "sampling_hz",
-            "lap_time_ms", "lap_distance_m",
-            "loss_ms", "brake_start_delta_m", "throttle_on_delta_m", "min_speed_delta_kmh", "exit_speed_delta_kmh",
-            "corner_len", "corner_dim",
-            "speed_min", "speed_max", "speed_mean", "speed_std",
-            "throttle_mean", "throttle_std", "throttle_integral", "throttle_ratio_gt_05",
-            "brake_mean", "brake_std", "brake_integral", "brake_ratio_gt_05",
-            "rpm_mean", "rpm_std",
-            "gear_min", "gear_max", "gear_mean",
-            "curvature_abs_mean", "curvature_abs_max", "curvature_mean",
-            "brake_onset_rel", "brake_release_rel", "throttle_onset_rel",
+            "run_id",
+            "run_alias",
+            "track_name",
+            "car_name",
+            "notes",
+            "schema_version",
+            "schema_hash",
+            "reference_locked",
+            "reference_lap_num",
+            "lap_num",
+            "corner_index",
+            "corner_uid",
+            "corner_direction",
+            "corner_strength",
+            "corner_start_idx",
+            "corner_end_idx",
+            "n_bins",
+            "sampling_hz",
+            "lap_time_ms",
+            "lap_distance_m",
+            "loss_ms",
+            "brake_start_delta_m",
+            "throttle_on_delta_m",
+            "min_speed_delta_kmh",
+            "exit_speed_delta_kmh",
+            "corner_len",
+            "corner_dim",
+            "speed_min",
+            "speed_max",
+            "speed_mean",
+            "speed_std",
+            "throttle_mean",
+            "throttle_std",
+            "throttle_integral",
+            "throttle_ratio_gt_05",
+            "brake_mean",
+            "brake_std",
+            "brake_integral",
+            "brake_ratio_gt_05",
+            "rpm_mean",
+            "rpm_std",
+            "gear_min",
+            "gear_max",
+            "gear_mean",
+            "curvature_abs_mean",
+            "curvature_abs_max",
+            "curvature_mean",
+            "brake_onset_rel",
+            "brake_release_rel",
+            "throttle_onset_rel",
         ]
-        cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+        cols = [c for c in preferred if c in df.columns] + [
+            c for c in df.columns if c not in preferred
+        ]
         df = df[cols]
 
         # Stable sorting in case upstream changes
         if "lap_num" in df.columns and "corner_index" in df.columns:
-            df = df.sort_values(["lap_num", "corner_index"], kind="mergesort").reset_index(drop=True)
+            df = df.sort_values(
+                ["lap_num", "corner_index"], kind="mergesort"
+            ).reset_index(drop=True)
 
         return df, report
 
@@ -411,11 +504,17 @@ def save_corner_dataset(
     # Enforce overwrite semantics
     if not overwrite:
         if out_csv.exists():
-            raise FileExistsError(f"Refusing to overwrite existing file: {out_csv}")
+            raise FileExistsError(
+                f"Refusing to overwrite existing file: {out_csv}"
+            )
         if out_build.exists():
-            raise FileExistsError(f"Refusing to overwrite existing file: {out_build}")
+            raise FileExistsError(
+                f"Refusing to overwrite existing file: {out_build}"
+            )
         if out_parquet is not None and out_parquet.exists():
-            raise FileExistsError(f"Refusing to overwrite existing file: {out_parquet}")
+            raise FileExistsError(
+                f"Refusing to overwrite existing file: {out_parquet}"
+            )
 
     paths: Dict[str, Optional[Path]] = {
         "csv": out_csv,
@@ -442,7 +541,6 @@ def save_corner_dataset(
     return paths
 
 
-
 def build_and_save_corner_dataset(
     run_dir: Path | str,
     track_name: Optional[str] = None,
@@ -464,6 +562,7 @@ def build_and_save_corner_dataset(
     df = df_or_rows
     if not hasattr(df_or_rows, "to_csv"):
         import pandas as pd
+
         df = pd.DataFrame(df_or_rows)
 
     dataset_build = {
@@ -499,22 +598,44 @@ def _print_report(report: DatasetBuildReport) -> None:
     print(f"[dataset] schema_hash: {report.schema_hash}")
     if report.reasons:
         print("[dataset] skip reasons:")
-        for k, v in sorted(report.reasons.items(), key=lambda kv: (-kv[1], kv[0])):
+        for k, v in sorted(
+            report.reasons.items(), key=lambda kv: (-kv[1], kv[0])
+        ):
             print(f"  - {k}: {v}")
 
 
 if __name__ == "__main__":
     import argparse
 
-    ap = argparse.ArgumentParser(description="Build a corner-level dataset from a GT7 Race Engineer run folder.")
-    ap.add_argument("run_dir", type=str, help="Path to data/runs/<run_id> folder")
-    ap.add_argument("--track", type=str, default=None, help="Override track name (e.g., Monza)")
-    ap.add_argument("--include-raw", action="store_true", help="Include raw X sequences in memory (not recommended for CSV)")
-    ap.add_argument("--no-parquet", action="store_true", help="Disable parquet output")
+    ap = argparse.ArgumentParser(
+        description=(
+            "Build a corner-level dataset from a GT7 Race Engineer "
+            "run folder."
+        )
+    )
+    ap.add_argument(
+        "run_dir", type=str, help="Path to data/runs/<run_id> folder"
+    )
+    ap.add_argument(
+        "--track",
+        type=str,
+        default=None,
+        help="Override track name (e.g., Monza)",
+    )
+    ap.add_argument(
+        "--include-raw",
+        action="store_true",
+        help="Include raw X sequences in memory (not recommended for CSV)",
+    )
+    ap.add_argument(
+        "--no-parquet", action="store_true", help="Disable parquet output"
+    )
     args = ap.parse_args()
 
     if _pd is None:
-        raise SystemExit("pandas is required. Install pandas to use this script.")
+        raise SystemExit(
+            "pandas is required. Install pandas to use this script."
+        )
 
     paths, report = build_and_save_corner_dataset(
         args.run_dir,

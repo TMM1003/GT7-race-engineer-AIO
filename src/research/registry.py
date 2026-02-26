@@ -21,7 +21,9 @@ def _utc_iso(ts: float | None = None) -> str:
 
 def _git_commit_short() -> Optional[str]:
     try:
-        out = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL)
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
+        )
         s = out.decode("utf-8", "ignore").strip()
         return s or None
     except Exception:
@@ -43,7 +45,11 @@ class RunRegistry:
     meta: Dict[str, Any]
 
 
-def create_run(output_root: str, run_alias: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> RunRegistry:
+def create_run(
+    output_root: str,
+    run_alias: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> RunRegistry:
     """
     Creates:
       <output_root>/<run_id>/
@@ -91,4 +97,9 @@ def create_run(output_root: str, run_alias: Optional[str] = None, metadata: Opti
     with (run_dir / "run.json").open("w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, sort_keys=True)
 
-    return RunRegistry(run_id=run_id, run_dir=run_dir, created_utc=meta["created_utc"], meta=meta)
+    return RunRegistry(
+        run_id=run_id,
+        run_dir=run_dir,
+        created_utc=meta["created_utc"],
+        meta=meta,
+    )
