@@ -1,5 +1,6 @@
 from collections import deque
 
+
 class RingBuffer:
     def __init__(self, size=3000):
         self.buf = deque(maxlen=size)

@@ -32,7 +32,8 @@ NON_FEATURE_COLS = {
     "run_id",
     "track_name",
     "corner_uid",
-    "corner_direction",  # non-numeric categorical; keep out for now unless you one-hot later
+    # Non-numeric categorical; keep out unless one-hot encoded later.
+    "corner_direction",
 }
 
 # “Heuristics-only” baseline feature set (these should exist in your dataset).
@@ -76,7 +77,9 @@ def _choose_group_col(df: pd.DataFrame) -> Optional[str]:
     return None
 
 
-def _select_features(df: pd.DataFrame, mode: str) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
+def _select_features(
+    df: pd.DataFrame, mode: str
+) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
     if "loss_ms" not in df.columns:
         raise ValueError("Dataset must contain target column 'loss_ms'.")
 
@@ -85,16 +88,21 @@ def _select_features(df: pd.DataFrame, mode: str) -> Tuple[pd.DataFrame, pd.Seri
     if mode == "heuristics":
         missing = [c for c in HEURISTIC_FEATURES if c not in df.columns]
         if missing:
-            raise ValueError(f"Heuristic features missing from dataset: {missing}")
+            raise ValueError(
+                f"Heuristic features missing from dataset: {missing}"
+            )
         X = df[HEURISTIC_FEATURES].copy()
         feature_names = HEURISTIC_FEATURES.copy()
 
     elif mode == "all_numeric":
-        # Use all numeric columns except NON_FEATURE_COLS and obvious identifiers.
+        # Use all numeric columns except NON_FEATURE_COLS and obvious
+        # identifiers.
         numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
         feature_names = [c for c in numeric_cols if c not in NON_FEATURE_COLS]
         if not feature_names:
-            raise ValueError("No numeric feature columns found after exclusions.")
+            raise ValueError(
+                "No numeric feature columns found after exclusions."
+            )
         X = df[feature_names].copy()
 
     else:
@@ -147,9 +155,11 @@ def _cv_eval(
     preprocessor = _build_preprocess_pipeline(feature_names)
     pipe = Pipeline(steps=[("pre", preprocessor), ("model", model_obj)])
 
-    # If we have groups, use GroupKFold; else plain KFold behavior via GroupKFold on fake groups.
+    # If we have groups, use GroupKFold; else plain KFold behavior via
+    # GroupKFold on fake groups.
     if groups is None:
-        groups = pd.Series(np.arange(len(X)) // 1, index=X.index)  # each row its own group (degenerate)
+        # each row its own group (degenerate)
+        groups = pd.Series(np.arange(len(X)) // 1, index=X.index)
 
     splitter = GroupKFold(n_splits=min(n_splits, len(np.unique(groups))))
     rmses: List[float] = []
@@ -181,7 +191,8 @@ def _cv_eval(
                 random_state=seed,
                 scoring="neg_root_mean_squared_error",
             )
-            # Higher is better for neg RMSE; convert to positive importance by negating.
+            # Higher is better for neg RMSE; convert to positive importance by
+            # negating.
             fold_imp = -perm.importances_mean
             importances_accum += fold_imp
             importances_count += 1
@@ -196,7 +207,11 @@ def _cv_eval(
 
     if importances_count > 0:
         imp_mean = importances_accum / importances_count
-        ranked = sorted(zip(feature_names, imp_mean.tolist()), key=lambda x: x[1], reverse=True)
+        ranked = sorted(
+            zip(feature_names, imp_mean.tolist()),
+            key=lambda x: x[1],
+            reverse=True,
+        )
         top_features = ranked[:15]
     else:
         top_features = []
@@ -216,7 +231,11 @@ def run(
     # Basic sanity filters
     df = df.dropna(subset=["loss_ms"]).copy()
     if len(df) < 6:
-        raise ValueError(f"Dataset too small after filtering (rows={len(df)}). Need more corners/laps.")
+        raise ValueError(
+            f"Dataset too small after filtering (rows={
+                len(df)
+            }). Need more corners/laps."
+        )
 
     group_col = _choose_group_col(df)
     groups = df[group_col] if group_col else None
@@ -245,7 +264,9 @@ def run(
                 feature_set=feature_mode,
                 n_rows=len(X),
                 n_features=len(feature_names),
-                cv_splits=min(n_splits, len(np.unique(groups))) if groups is not None else n_splits,
+                cv_splits=min(n_splits, len(np.unique(groups)))
+                if groups is not None
+                else n_splits,
                 rmse_mean=rmse_mean,
                 rmse_std=rmse_std,
                 r2_mean=r2_mean,
@@ -265,7 +286,9 @@ def run(
         )
 
         if r.top_features:
-            print("  Top features (perm importance, higher=worse RMSE impact):")
+            print(
+                "  Top features (perm importance, higher=worse RMSE impact):"
+            )
             for feat, val in r.top_features[:10]:
                 print(f"    - {feat}: {val:.4f}")
         print()
@@ -285,12 +308,33 @@ def run(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Baseline ML evaluation for corner_dataset.")
-    ap.add_argument("dataset", type=str, help="Path to corner_dataset.csv or corner_dataset.parquet")
-    ap.add_argument("--out", type=str, default="", help="Optional path to write JSON report")
+    ap = argparse.ArgumentParser(
+        description="Baseline ML evaluation for corner_dataset."
+    )
+    ap.add_argument(
+        "dataset",
+        type=str,
+        help="Path to corner_dataset.csv or corner_dataset.parquet",
+    )
+    ap.add_argument(
+        "--out",
+        type=str,
+        default="",
+        help="Optional path to write JSON report",
+    )
     ap.add_argument("--seed", type=int, default=7)
-    ap.add_argument("--splits", type=int, default=5, help="GroupKFold splits (limited by #groups)")
-    ap.add_argument("--perm-repeats", type=int, default=20, help="Permutation importance repeats per fold")
+    ap.add_argument(
+        "--splits",
+        type=int,
+        default=5,
+        help="GroupKFold splits (limited by #groups)",
+    )
+    ap.add_argument(
+        "--perm-repeats",
+        type=int,
+        default=20,
+        help="Permutation importance repeats per fold",
+    )
     args = ap.parse_args()
 
     dataset_path = Path(args.dataset)

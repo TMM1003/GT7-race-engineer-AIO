@@ -4,7 +4,11 @@ from __future__ import annotations
 from PySide6 import QtWidgets, QtCore
 import pyqtgraph as pg
 
-from src.core.telemetry_session import TelemetrySession, LapData, _resample_by_distance
+from src.core.telemetry_session import (
+    TelemetrySession,
+    LapData,
+    _resample_by_distance,
+)
 
 TIME_PLACEHOLDER = "--.--"
 DELTA_PLACEHOLDER = "—"
@@ -30,7 +34,9 @@ def _delta_ms_color_style(delta_ms: float | None) -> str:
     return "color: #27ae60;" if delta_ms <= 0 else "color: #c0392b;"
 
 
-def _delta_at_fraction(delta_ms_profile: list[float], frac: float) -> float | None:
+def _delta_at_fraction(
+    delta_ms_profile: list[float], frac: float
+) -> float | None:
     if not delta_ms_profile:
         return None
     frac = max(0.0, min(1.0, frac))
@@ -45,9 +51,10 @@ class TrackMapWidget(QtWidgets.QWidget):
         super().__init__()
         layout = QtWidgets.QVBoxLayout(self)
 
-        
         # Sector panel
-        self._sector_panel = QtWidgets.QGroupBox("Sector Times (synthetic thirds)")
+        self._sector_panel = QtWidgets.QGroupBox(
+            "Sector Times (synthetic thirds)"
+        )
         grid = QtWidgets.QGridLayout(self._sector_panel)
 
         # Header row
@@ -95,7 +102,9 @@ class TrackMapWidget(QtWidgets.QWidget):
         layout.addWidget(self._sector_panel)
 
         # Plot
-        self.plot = pg.PlotWidget(title="Track Map (X vs Z) — last vs reference")
+        self.plot = pg.PlotWidget(
+            title="Track Map (X vs Z) — last vs reference"
+        )
         self.plot.setAspectLocked(True)
         self.plot.showGrid(x=True, y=True, alpha=0.2)
 
@@ -103,7 +112,9 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._ref_line = self.plot.plot([], [], pen=pg.mkPen(width=2))
         self._last_line = self.plot.plot([], [], pen=pg.mkPen(width=2))
         # current lap trace (LIVE)
-        self._cur_line = self.plot.plot([], [], pen=pg.mkPen(width=2, style=QtCore.Qt.DashLine))
+        self._cur_line = self.plot.plot(
+            [], [], pen=pg.mkPen(width=2, style=QtCore.Qt.DashLine)
+        )
 
         # delta overlay (scatter along last lap)
         self._delta_scatter = pg.ScatterPlotItem(size=6)
@@ -131,10 +142,14 @@ class TrackMapWidget(QtWidgets.QWidget):
         lbl = QtWidgets.QLabel(text)
         lbl.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         weight = "700" if bold else "600"
-        lbl.setStyleSheet(f"font-family: Consolas, monospace; font-weight: {weight};")
+        lbl.setStyleSheet(
+            f"font-family: Consolas, monospace; font-weight: {weight};"
+        )
         return lbl
 
-    def update_from_session(self, session: TelemetrySession, n: int = 300) -> None:
+    def update_from_session(
+        self, session: TelemetrySession, n: int = 300
+    ) -> None:
         # session reset handling for visuals
         if self._last_session_id is None:
             self._last_session_id = session.session_id()
@@ -178,10 +193,15 @@ class TrackMapWidget(QtWidgets.QWidget):
         # sector panel values
         self._update_sector_panel(session, last, ref, n=n)
 
-    
     # Sector panel logic
-    
-    def _update_sector_panel(self, session: TelemetrySession, last: LapData | None, ref: LapData | None, n: int = 300) -> None:
+
+    def _update_sector_panel(
+        self,
+        session: TelemetrySession,
+        last: LapData | None,
+        ref: LapData | None,
+        n: int = 300,
+    ) -> None:
         ref_times = session.sector_times_ms(ref) if ref else None
         last_times = session.sector_times_ms(last) if last else None
 
@@ -219,37 +239,64 @@ class TrackMapWidget(QtWidgets.QWidget):
             self._delta_sector_s3.setText(DELTA_PLACEHOLDER)
 
         # Δ checkpoints from distance-aligned time delta profile
-        prof = session.delta_profile_time_ms(last, ref, n=n) if (last and ref) else None
+        prof = (
+            session.delta_profile_time_ms(last, ref, n=n)
+            if (last and ref)
+            else None
+        )
         if prof:
             d_s1 = _delta_at_fraction(prof, 1.0 / 3.0)
             d_s2 = _delta_at_fraction(prof, 2.0 / 3.0)
             d_fin = _delta_at_fraction(prof, 1.0)
 
-            self._delta_split_s1.setText(_delta_ms_str(int(round(d_s1))) if d_s1 is not None else DELTA_PLACEHOLDER)
-            self._delta_split_s2.setText(_delta_ms_str(int(round(d_s2))) if d_s2 is not None else DELTA_PLACEHOLDER)
-            self._delta_split_fin.setText(_delta_ms_str(int(round(d_fin))) if d_fin is not None else DELTA_PLACEHOLDER)
+            self._delta_split_s1.setText(
+                _delta_ms_str(int(round(d_s1)))
+                if d_s1 is not None
+                else DELTA_PLACEHOLDER
+            )
+            self._delta_split_s2.setText(
+                _delta_ms_str(int(round(d_s2)))
+                if d_s2 is not None
+                else DELTA_PLACEHOLDER
+            )
+            self._delta_split_fin.setText(
+                _delta_ms_str(int(round(d_fin)))
+                if d_fin is not None
+                else DELTA_PLACEHOLDER
+            )
 
             # colorize
             self._delta_split_s1.setStyleSheet(
-                "font-family: Consolas, monospace; font-weight: 700; " + _delta_ms_color_style(d_s1)
+                "font-family: Consolas, monospace; font-weight: 700; "
+                + _delta_ms_color_style(d_s1)
             )
             self._delta_split_s2.setStyleSheet(
-                "font-family: Consolas, monospace; font-weight: 700; " + _delta_ms_color_style(d_s2)
+                "font-family: Consolas, monospace; font-weight: 700; "
+                + _delta_ms_color_style(d_s2)
             )
             self._delta_split_fin.setStyleSheet(
-                "font-family: Consolas, monospace; font-weight: 700; " + _delta_ms_color_style(d_fin)
+                "font-family: Consolas, monospace; font-weight: 700; "
+                + _delta_ms_color_style(d_fin)
             )
         else:
             self._delta_split_s1.setText(DELTA_PLACEHOLDER)
             self._delta_split_s2.setText(DELTA_PLACEHOLDER)
             self._delta_split_fin.setText(DELTA_PLACEHOLDER)
-            self._delta_split_s1.setStyleSheet("font-family: Consolas, monospace; font-weight: 700;")
-            self._delta_split_s2.setStyleSheet("font-family: Consolas, monospace; font-weight: 700;")
-            self._delta_split_fin.setStyleSheet("font-family: Consolas, monospace; font-weight: 700;")
+            self._delta_split_s1.setStyleSheet(
+                "font-family: Consolas, monospace; font-weight: 700;"
+            )
+            self._delta_split_s2.setStyleSheet(
+                "font-family: Consolas, monospace; font-weight: 700;"
+            )
+            self._delta_split_fin.setStyleSheet(
+                "font-family: Consolas, monospace; font-weight: 700;"
+            )
 
-    
     # Existing drawing helpers
-    def _set_polyline(self, item: pg.PlotDataItem, pts: list[tuple[float, float]]) -> None:
+
+    def _set_polyline(
+        self, item: pg.PlotDataItem, pts: list[tuple[float, float]]
+    ) -> None:
         if not pts:
             item.setData([], [])
             return
@@ -257,7 +304,9 @@ class TrackMapWidget(QtWidgets.QWidget):
         zs = [p[1] for p in pts]
         item.setData(xs, zs)
 
-    def _draw_gate_and_sectors(self, session: TelemetrySession, lap: LapData) -> None:
+    def _draw_gate_and_sectors(
+        self, session: TelemetrySession, lap: LapData
+    ) -> None:
         # start/finish gate line
         if lap.start_gate:
             (a, b) = lap.start_gate
@@ -280,7 +329,9 @@ class TrackMapWidget(QtWidgets.QWidget):
             spots.append({"pos": p2})
         self._sector_scatter.setData(spots)
 
-    def _point_at_distance(self, lap: LapData, target_d: float) -> tuple[float, float] | None:
+    def _point_at_distance(
+        self, lap: LapData, target_d: float
+    ) -> tuple[float, float] | None:
         cd = lap.cum_dist_m
         pts = lap.points_xz
         if not cd or not pts or len(cd) != len(pts):
@@ -300,7 +351,12 @@ class TrackMapWidget(QtWidgets.QWidget):
         z = pts[j][1] + a * (pts[j + 1][1] - pts[j][1])
         return (x, z)
 
-    def _draw_delta(self, session: TelemetrySession, last: LapData | None, ref: LapData | None) -> None:
+    def _draw_delta(
+        self,
+        session: TelemetrySession,
+        last: LapData | None,
+        ref: LapData | None,
+    ) -> None:
         if not last or not ref:
             self._delta_scatter.setData([])
             return
@@ -309,17 +365,27 @@ class TrackMapWidget(QtWidgets.QWidget):
             return
 
         n = 220
-        last_r_pts = _resample_by_distance(last.points_xz, last.cum_dist_m, n=n)
+        last_r_pts = _resample_by_distance(
+            last.points_xz, last.cum_dist_m, n=n
+        )
         deltas_ms = session.delta_profile_time_ms(last, ref, n=n)
 
-        if not last_r_pts or not deltas_ms or len(last_r_pts) != len(deltas_ms):
+        if (
+            not last_r_pts
+            or not deltas_ms
+            or len(last_r_pts) != len(deltas_ms)
+        ):
             self._delta_scatter.setData([])
             return
 
         # delta_ms > 0 => behind (red), delta_ms <= 0 => ahead (green)
         spots = []
         for (x, z), dt in zip(last_r_pts, deltas_ms):
-            brush = pg.mkBrush(0, 200, 0, 180) if dt <= 0 else pg.mkBrush(200, 0, 0, 180)
+            brush = (
+                pg.mkBrush(0, 200, 0, 180)
+                if dt <= 0
+                else pg.mkBrush(200, 0, 0, 180)
+            )
             spots.append({"pos": (x, z), "brush": brush})
         self._delta_scatter.setData(spots)
 
@@ -347,6 +413,12 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._delta_split_s1.setText(DELTA_PLACEHOLDER)
         self._delta_split_s2.setText(DELTA_PLACEHOLDER)
         self._delta_split_fin.setText(DELTA_PLACEHOLDER)
-        self._delta_split_s1.setStyleSheet("font-family: Consolas, monospace; font-weight: 700;")
-        self._delta_split_s2.setStyleSheet("font-family: Consolas, monospace; font-weight: 700;")
-        self._delta_split_fin.setStyleSheet("font-family: Consolas, monospace; font-weight: 700;")
+        self._delta_split_s1.setStyleSheet(
+            "font-family: Consolas, monospace; font-weight: 700;"
+        )
+        self._delta_split_s2.setStyleSheet(
+            "font-family: Consolas, monospace; font-weight: 700;"
+        )
+        self._delta_split_fin.setStyleSheet(
+            "font-family: Consolas, monospace; font-weight: 700;"
+        )

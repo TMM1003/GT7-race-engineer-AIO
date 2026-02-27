@@ -3,6 +3,8 @@ from .buffers import RingBuffer
 
 # Legacy session buffer (pre TelemetrySession)
 # Kept for backward compatibility and to avoid breaking imports
+
+
 class Session:
     def __init__(self):
         self.live = RingBuffer()
@@ -20,4 +22,3 @@ class Session:
             self.current_lap = sample.lap
 
         self.current_lap_samples.append(sample)
-

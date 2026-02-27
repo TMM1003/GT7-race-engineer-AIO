@@ -55,7 +55,11 @@ class RaceState:
         self.best_lap_ms = int(snap.get("best_lap_ms") or 0)
         self.last_lap_ms = int(snap.get("last_lap_ms") or 0)
 
-        self.fuel_pct = (self.fuel / self.fuel_capacity * 100.0) if self.fuel_capacity > 0 else 0.0
+        self.fuel_pct = (
+            (self.fuel / self.fuel_capacity * 100.0)
+            if self.fuel_capacity > 0
+            else 0.0
+        )
 
     @property
     def best_lap_str(self) -> str:

@@ -21,18 +21,33 @@ class CornerTableWidget(QtWidgets.QWidget):
 
         self.table = QtWidgets.QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
-            ["#", "Start %", "End %", "Dir", "Loss (ms)", "ΔBrake (m)", "ΔThrottle (m)", "ΔMinSpd", "ΔExitSpd"]
+            [
+                "#",
+                "Start %",
+                "End %",
+                "Dir",
+                "Loss (ms)",
+                "ΔBrake (m)",
+                "ΔThrottle (m)",
+                "ΔMinSpd",
+                "ΔExitSpd",
+            ]
         )
 
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
         layout.addWidget(self.table)
 
         self.note = QtWidgets.QLabel(
-            "Corners are auto-detected from the reference lap curvature; loss is Δt(exit) − Δt(entry)."
+            (
+                "Corners are auto-detected from reference-lap curvature; "
+                "loss is delta-t(exit) minus delta-t(entry)."
+            )
         )
         self.note.setWordWrap(True)
         self.note.setStyleSheet("color: #7f8c8d;")
@@ -45,7 +60,9 @@ class CornerTableWidget(QtWidgets.QWidget):
     def clear(self) -> None:
         self.table.setRowCount(0)
 
-    def update_from_session(self, session: TelemetrySession, n: int = 300) -> None:
+    def update_from_session(
+        self, session: TelemetrySession, n: int = 300
+    ) -> None:
         laps = session.completed_laps()
         if len(laps) < 2:
             self.clear()
@@ -91,7 +108,6 @@ class CornerTableWidget(QtWidgets.QWidget):
             den = float(max(1, n - 1))
             start_pct = 100.0 * (seg.start_idx / den)
             end_pct = 100.0 * (seg.end_idx / den)
-
 
             if seg.direction > 0:
                 d = "R"

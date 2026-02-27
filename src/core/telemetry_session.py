@@ -61,7 +61,9 @@ def _cumdist(points: List[Tuple[float, float]]) -> List[float]:
     return out
 
 
-def _make_start_gate(points: List[Tuple[float, float]]) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+def _make_start_gate(
+    points: List[Tuple[float, float]],
+) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
     if len(points) < 6:
         return None
 
@@ -82,7 +84,9 @@ def _make_start_gate(points: List[Tuple[float, float]]) -> Optional[Tuple[Tuple[
     return (a, b)
 
 
-def _resample_by_distance(points: List[Tuple[float, float]], cumdist: List[float], n: int = 300) -> List[Tuple[float, float]]:
+def _resample_by_distance(
+    points: List[Tuple[float, float]], cumdist: List[float], n: int = 300
+) -> List[Tuple[float, float]]:
     if not points or not cumdist or len(points) != len(cumdist):
         return []
     total = cumdist[-1]
@@ -110,7 +114,9 @@ def _resample_by_distance(points: List[Tuple[float, float]], cumdist: List[float
     return out
 
 
-def _resample_series_by_distance(series: List[float], cumdist: List[float], n: int = 300) -> List[float]:
+def _resample_series_by_distance(
+    series: List[float], cumdist: List[float], n: int = 300
+) -> List[float]:
     if not series or not cumdist or len(series) != len(cumdist):
         return []
     total = cumdist[-1]
@@ -161,7 +167,9 @@ def _moving_average(xs: List[float], w: int) -> List[float]:
     return out
 
 
-def _first_threshold_crossing(xs: List[float], i0: int, i1: int, thr: float, hold: int = 3) -> Optional[int]:
+def _first_threshold_crossing(
+    xs: List[float], i0: int, i1: int, thr: float, hold: int = 3
+) -> Optional[int]:
     n = len(xs)
     if n == 0:
         return None
@@ -186,6 +194,7 @@ class TelemetrySession:
     """
     Rolling history + per-lap storage + derived lap distance axis.
     """
+
     def __init__(self, max_samples: int = 36000, on_lap_finalized=None):
         self._samples: Deque[TelemetrySample] = deque(maxlen=max_samples)
 
@@ -218,7 +227,11 @@ class TelemetrySession:
         return list(self._completed_laps)
 
     def current_lap_points(self) -> List[Tuple[float, float]]:
-        return [(s.x, s.z) for s in self._current_lap_samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
+        return [
+            (s.x, s.z)
+            for s in self._current_lap_samples
+            if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)
+        ]
 
     def session_id(self) -> int:
         return self._session_id
@@ -290,30 +303,52 @@ class TelemetrySession:
         s3 = int(round((t_end - t_at_d2) * 1000))
         return (max(s1, 0), max(s2, 0), max(s3, 0))
 
-    def delta_profile_speed(self, last: LapData, ref: LapData, n: int = 300) -> Optional[List[float]]:
+    def delta_profile_speed(
+        self, last: LapData, ref: LapData, n: int = 300
+    ) -> Optional[List[float]]:
         if not last.cum_dist_m or not ref.cum_dist_m:
             return None
 
-        last_speeds = [s.speed_kmh for s in last.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
-        ref_speeds = [s.speed_kmh for s in ref.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
+        last_speeds = [
+            s.speed_kmh
+            for s in last.samples
+            if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)
+        ]
+        ref_speeds = [
+            s.speed_kmh
+            for s in ref.samples
+            if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)
+        ]
 
-        if len(last_speeds) != len(last.cum_dist_m) or len(ref_speeds) != len(ref.cum_dist_m):
+        if len(last_speeds) != len(last.cum_dist_m) or len(ref_speeds) != len(
+            ref.cum_dist_m
+        ):
             return None
 
-        last_r = _resample_series_by_distance(last_speeds, last.cum_dist_m, n=n)
+        last_r = _resample_series_by_distance(
+            last_speeds, last.cum_dist_m, n=n
+        )
         ref_r = _resample_series_by_distance(ref_speeds, ref.cum_dist_m, n=n)
         if not last_r or not ref_r or len(last_r) != len(ref_r):
             return None
         return [last_r[i] - ref_r[i] for i in range(n)]
 
-    def delta_profile_time_ms(self, last: LapData, ref: LapData, n: int = 300) -> Optional[List[float]]:
+    def delta_profile_time_ms(
+        self, last: LapData, ref: LapData, n: int = 300
+    ) -> Optional[List[float]]:
         if not last.cum_dist_m or not ref.cum_dist_m:
             return None
 
-        last_ts = [s.t for s in last.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
-        ref_ts = [s.t for s in ref.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
+        last_ts = [
+            s.t for s in last.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)
+        ]
+        ref_ts = [
+            s.t for s in ref.samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)
+        ]
 
-        if len(last_ts) != len(last.cum_dist_m) or len(ref_ts) != len(ref.cum_dist_m):
+        if len(last_ts) != len(last.cum_dist_m) or len(ref_ts) != len(
+            ref.cum_dist_m
+        ):
             return None
 
         last_t0 = last_ts[0]
@@ -321,7 +356,9 @@ class TelemetrySession:
         last_elapsed = [t - last_t0 for t in last_ts]
         ref_elapsed = [t - ref_t0 for t in ref_ts]
 
-        last_r = _resample_series_by_distance(last_elapsed, last.cum_dist_m, n=n)
+        last_r = _resample_series_by_distance(
+            last_elapsed, last.cum_dist_m, n=n
+        )
         ref_r = _resample_series_by_distance(ref_elapsed, ref.cum_dist_m, n=n)
         if not last_r or not ref_r or len(last_r) != len(ref_r):
             return None
@@ -389,14 +426,18 @@ class TelemetrySession:
             if length >= min_len and count > 0:
                 avg_signed = signed_sum / count
                 avg_abs = abs_sum / count
-                direction = 1 if avg_signed > 0 else -1 if avg_signed < 0 else 0
+                direction = (
+                    1 if avg_signed > 0 else -1 if avg_signed < 0 else 0
+                )
                 segs.append(CornerSegment(start, end, direction, avg_abs))
 
             i = j
 
         return segs
 
-    def corner_time_losses_ms(self, last: LapData, ref: LapData, n: int = 300) -> Optional[List[Tuple[CornerSegment, float]]]:
+    def corner_time_losses_ms(
+        self, last: LapData, ref: LapData, n: int = 300
+    ) -> Optional[List[Tuple[CornerSegment, float]]]:
         dt = self.delta_profile_time_ms(last, ref, n=n)
         if not dt or len(dt) != n:
             return None
@@ -434,19 +475,45 @@ class TelemetrySession:
         if not corners:
             return []
 
-        last_brake = [s.brake for s in last.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
-        last_throt = [s.throttle for s in last.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
-        last_spd = [s.speed_kmh for s in last.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+        last_brake = [
+            s.brake for s in last.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6
+        ]
+        last_throt = [
+            s.throttle
+            for s in last.samples
+            if abs(s.x) > 1e-6 or abs(s.z) > 1e-6
+        ]
+        last_spd = [
+            s.speed_kmh
+            for s in last.samples
+            if abs(s.x) > 1e-6 or abs(s.z) > 1e-6
+        ]
 
-        ref_brake = [s.brake for s in ref.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
-        ref_throt = [s.throttle for s in ref.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
-        ref_spd = [s.speed_kmh for s in ref.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6]
+        ref_brake = [
+            s.brake for s in ref.samples if abs(s.x) > 1e-6 or abs(s.z) > 1e-6
+        ]
+        ref_throt = [
+            s.throttle
+            for s in ref.samples
+            if abs(s.x) > 1e-6 or abs(s.z) > 1e-6
+        ]
+        ref_spd = [
+            s.speed_kmh
+            for s in ref.samples
+            if abs(s.x) > 1e-6 or abs(s.z) > 1e-6
+        ]
 
-        if len(last_brake) != len(last.cum_dist_m) or len(ref_brake) != len(ref.cum_dist_m):
+        if len(last_brake) != len(last.cum_dist_m) or len(ref_brake) != len(
+            ref.cum_dist_m
+        ):
             return None
 
-        last_br = _resample_series_by_distance(last_brake, last.cum_dist_m, n=n)
-        last_th = _resample_series_by_distance(last_throt, last.cum_dist_m, n=n)
+        last_br = _resample_series_by_distance(
+            last_brake, last.cum_dist_m, n=n
+        )
+        last_th = _resample_series_by_distance(
+            last_throt, last.cum_dist_m, n=n
+        )
         last_sp = _resample_series_by_distance(last_spd, last.cum_dist_m, n=n)
 
         ref_br = _resample_series_by_distance(ref_brake, ref.cum_dist_m, n=n)
@@ -473,8 +540,12 @@ class TelemetrySession:
 
             loss_ms = float(dt[b] - dt[a])
 
-            ref_br_i = _first_threshold_crossing(ref_br, max(0, a - approach_pad), b, brake_thr, hold)
-            last_br_i = _first_threshold_crossing(last_br, max(0, a - approach_pad), b, brake_thr, hold)
+            ref_br_i = _first_threshold_crossing(
+                ref_br, max(0, a - approach_pad), b, brake_thr, hold
+            )
+            last_br_i = _first_threshold_crossing(
+                last_br, max(0, a - approach_pad), b, brake_thr, hold
+            )
 
             brake_delta = (
                 idx_to_m(last_br_i) - idx_to_m(ref_br_i)
@@ -482,8 +553,12 @@ class TelemetrySession:
                 else None
             )
 
-            ref_th_i = _first_threshold_crossing(ref_th, a, min(n - 1, b + exit_pad), throttle_thr, hold)
-            last_th_i = _first_threshold_crossing(last_th, a, min(n - 1, b + exit_pad), throttle_thr, hold)
+            ref_th_i = _first_threshold_crossing(
+                ref_th, a, min(n - 1, b + exit_pad), throttle_thr, hold
+            )
+            last_th_i = _first_threshold_crossing(
+                last_th, a, min(n - 1, b + exit_pad), throttle_thr, hold
+            )
 
             throttle_delta = (
                 idx_to_m(last_th_i) - idx_to_m(ref_th_i)
@@ -515,7 +590,10 @@ class TelemetrySession:
         tot = snap.get("time_on_track_s")
         tot_s = int(tot) if isinstance(tot, (int, float)) else None
         if tot_s is not None:
-            if self._last_time_on_track_s is not None and tot_s + 2 < self._last_time_on_track_s:
+            if (
+                self._last_time_on_track_s is not None
+                and tot_s + 2 < self._last_time_on_track_s
+            ):
                 self._reset_session()
             self._last_time_on_track_s = tot_s
 
@@ -563,7 +641,7 @@ class TelemetrySession:
             self._current_lap_samples = []
             self._last_lap_num = lap
 
-        coords_ok = (abs(x) > 1e-6 or abs(z) > 1e-6)
+        coords_ok = abs(x) > 1e-6 or abs(z) > 1e-6
 
         snap_paused = bool(snap.get("paused") or False)
         effective_paused = self._effective_paused(
@@ -595,11 +673,17 @@ class TelemetrySession:
         self._last_pos = None
         self._last_moving_t = None
 
-    def _finalize_current_lap(self, on_lap_change_snapshot: Dict[str, Any]) -> None:
+    def _finalize_current_lap(
+        self, on_lap_change_snapshot: Dict[str, Any]
+    ) -> None:
         if len(self._current_lap_samples) < 10:
             return
 
-        points = [(s.x, s.z) for s in self._current_lap_samples if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)]
+        points = [
+            (s.x, s.z)
+            for s in self._current_lap_samples
+            if (abs(s.x) > 1e-6 or abs(s.z) > 1e-6)
+        ]
         if len(points) < 10:
             return
 
@@ -653,11 +737,24 @@ class TelemetrySession:
 
         best_i = max(
             range(len(self._completed_laps)),
-            key=lambda j: (self._completed_laps[j].cum_dist_m[-1] if self._completed_laps[j].cum_dist_m else 0.0),
+            key=lambda j: (
+                self._completed_laps[j].cum_dist_m[-1]
+                if self._completed_laps[j].cum_dist_m
+                else 0.0
+            ),
         )
         self._reference_idx = best_i
 
-    def _effective_paused(self, snap_paused: bool, x: float, z: float, speed_kmh: float, throttle: float, brake: float, now: float) -> bool:
+    def _effective_paused(
+        self,
+        snap_paused: bool,
+        x: float,
+        z: float,
+        speed_kmh: float,
+        throttle: float,
+        brake: float,
+        now: float,
+    ) -> bool:
         if self._last_moving_t is None:
             self._last_moving_t = now
 
@@ -669,8 +766,8 @@ class TelemetrySession:
             pos_stable = (dx * dx + dz * dz) < 0.01
         self._last_pos = pos
 
-        controls_idle = (throttle < 0.5 and brake < 0.5)
-        speed_idle = (speed_kmh < 1.0)
+        controls_idle = throttle < 0.5 and brake < 0.5
+        speed_idle = speed_kmh < 1.0
 
         if not (pos_stable and controls_idle and speed_idle):
             self._last_moving_t = now
@@ -679,7 +776,9 @@ class TelemetrySession:
         return bool(snap_paused) or heuristic_paused
 
 
-def _interp_time_at_distance(cumdist: List[float], ts: List[float], target_d: float) -> float:
+def _interp_time_at_distance(
+    cumdist: List[float], ts: List[float], target_d: float
+) -> float:
     if not cumdist or not ts or len(cumdist) != len(ts):
         return ts[-1] if ts else 0.0
     if target_d <= 0:

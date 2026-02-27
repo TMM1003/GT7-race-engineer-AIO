@@ -24,6 +24,7 @@ class RunMetadataTab(QtWidgets.QWidget):
       - sig_apply_meta(meta_dict): apply to current run (patches run.json)
       - sig_start_new_run(meta_dict): start new run using these metadata values
     """
+
     sig_apply_meta = QtCore.Signal(dict)
     sig_start_new_run = QtCore.Signal(dict)
 
@@ -33,7 +34,9 @@ class RunMetadataTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
 
         # Current run info (read-only)
-        self.grp_current = QtWidgets.QGroupBox("Current run labels (read-only)")
+        self.grp_current = QtWidgets.QGroupBox(
+            "Current run labels (read-only)"
+        )
         cur = QtWidgets.QFormLayout(self.grp_current)
         self.lbl_run_id = QtWidgets.QLabel("--")
         self.lbl_run_dir = QtWidgets.QLabel("--")
@@ -41,7 +44,13 @@ class RunMetadataTab(QtWidgets.QWidget):
         self.lbl_car = QtWidgets.QLabel("--")
         self.lbl_alias = QtWidgets.QLabel("--")
 
-        for lab in (self.lbl_run_id, self.lbl_run_dir, self.lbl_track, self.lbl_car, self.lbl_alias):
+        for lab in (
+            self.lbl_run_id,
+            self.lbl_run_dir,
+            self.lbl_track,
+            self.lbl_car,
+            self.lbl_alias,
+        ):
             lab.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
 
         cur.addRow("Run ID", self.lbl_run_id)
@@ -74,7 +83,9 @@ class RunMetadataTab(QtWidgets.QWidget):
         form.addRow("Run alias", alias_row)
 
         self.edit_notes = QtWidgets.QPlainTextEdit()
-        self.edit_notes.setPlaceholderText("Optional notes: tires, BoP, setup, objective, conditions, etc.")
+        self.edit_notes.setPlaceholderText(
+            "Optional notes: tires, BoP, setup, objective, conditions, etc."
+        )
         self.edit_notes.setMaximumBlockCount(2000)
         form.addRow("Notes", self.edit_notes)
 
@@ -93,8 +104,15 @@ class RunMetadataTab(QtWidgets.QWidget):
         btns.addStretch(1)
         layout.addStretch(1)
 
-    def set_current_run_info(self, *, run_id: str | None, run_dir: str | None,
-                             track_name: str | None, car_name: str | None, run_alias: str | None) -> None:
+    def set_current_run_info(
+        self,
+        *,
+        run_id: str | None,
+        run_dir: str | None,
+        track_name: str | None,
+        car_name: str | None,
+        run_alias: str | None,
+    ) -> None:
         """
         Called by controller to reflect the currently active run in the UI.
         """

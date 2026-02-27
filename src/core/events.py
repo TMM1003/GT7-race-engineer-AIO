@@ -23,17 +23,30 @@ class EventEngine:
         events: List[EngineerEvent] = []
 
         if state.connected and state.lap > 0:
-            if state.last_lap_ms and state.last_lap_ms != self._prev_last_lap_ms:
+            if (
+                state.last_lap_ms
+                and state.last_lap_ms != self._prev_last_lap_ms
+            ):
                 lap_completed = max(state.lap - 1, 0)
                 lt = ms_to_laptime(state.last_lap_ms)
-                fuel_pct = int(round(state.fuel_pct)) if state.fuel_capacity > 0 else None
-                speech = f"Lap {lap_completed}. {lt}." if fuel_pct is None else f"Lap {lap_completed}. {lt}. Fuel {fuel_pct} percent."
-                events.append(EngineerEvent(
-                    id=f"lap:{lap_completed}:{state.last_lap_ms}",
-                    title=f"Lap {lap_completed} complete",
-                    speech=speech,
-                    should_speak=True,
-                ))
+                fuel_pct = (
+                    int(round(state.fuel_pct))
+                    if state.fuel_capacity > 0
+                    else None
+                )
+                speech = (
+                    f"Lap {lap_completed}. {lt}."
+                    if fuel_pct is None
+                    else f"Lap {lap_completed}. {lt}. Fuel {fuel_pct} percent."
+                )
+                events.append(
+                    EngineerEvent(
+                        id=f"lap:{lap_completed}:{state.last_lap_ms}",
+                        title=f"Lap {lap_completed} complete",
+                        speech=speech,
+                        should_speak=True,
+                    )
+                )
             self._prev_last_lap_ms = state.last_lap_ms
 
         if state.fuel_capacity > 0:
@@ -50,12 +63,14 @@ class EventEngine:
                 self._prev_bucket = bucket
             elif bucket != self._prev_bucket:
                 if bucket < self._prev_bucket:
-                    events.append(EngineerEvent(
-                        id=f"fuel:{bucket}",
-                        title="Fuel warning",
-                        speech=f"Fuel at {bucket} percent.",
-                        should_speak=True,
-                    ))
+                    events.append(
+                        EngineerEvent(
+                            id=f"fuel:{bucket}",
+                            title="Fuel warning",
+                            speech=f"Fuel at {bucket} percent.",
+                            should_speak=True,
+                        )
+                    )
                 self._prev_bucket = bucket
 
         return events
