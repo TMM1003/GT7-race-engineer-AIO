@@ -20,7 +20,6 @@ The project is developed alongside an academic thesis focused on **corner-level 
 - Time delta visualization (last lap vs reference)
 - Telemetry graphs (speed, throttle, brake, coasting)
 - Corner-level performance tables
-- Optional voice feedback (experimental)
 
 ### Research-Oriented Data Export
 - Full-lap telemetry tensors
