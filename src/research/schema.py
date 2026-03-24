@@ -186,7 +186,9 @@ def build_lap_tensor(
         "ok": True,
         "lap_num": int(getattr(lap, "lap_num", 0)),
         "lap_time_ms": int(getattr(lap, "lap_time_ms", 0) or 0),
-        "total_dist_m": float(lap.cum_dist_m[-1] if lap.cum_dist_m else 0.0),
+        "lap_distance_m": float(
+            lap.cum_dist_m[-1] if lap.cum_dist_m else 0.0
+        ),
         "n": n,
         "features": list(spec.features),
         "session_id": int(session.session_id()),

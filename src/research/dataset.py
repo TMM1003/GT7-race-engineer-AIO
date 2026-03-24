@@ -61,6 +61,28 @@ def _safe_int(x: Any, default: int = -1) -> int:
         return default
 
 
+def _parquet_safe_frame(df: "Any") -> "Any":
+    if _pd is None or not isinstance(df, _pd.DataFrame):
+        return df
+
+    out = df.copy()
+    for col in out.columns:
+        s = out[col]
+        if not s.isna().any():
+            continue
+
+        if _pd.api.types.is_float_dtype(s):
+            out[col] = s.astype("Float64")
+        elif _pd.api.types.is_integer_dtype(s):
+            out[col] = s.astype("Int64")
+        elif _pd.api.types.is_bool_dtype(s):
+            out[col] = s.astype("boolean")
+        else:
+            out[col] = s.astype("object").where(s.notna(), None)
+
+    return out
+
+
 def _read_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
@@ -391,7 +413,9 @@ def build_corner_dataset(
         row.update(
             {
                 "lap_time_ms": _safe_float(meta.get("lap_time_ms")),
-                "lap_distance_m": _safe_float(meta.get("lap_distance_m")),
+                "lap_distance_m": _safe_float(
+                    meta.get("lap_distance_m", meta.get("total_dist_m"))
+                ),
             }
         )
 
@@ -528,7 +552,7 @@ def save_corner_dataset(
     # Parquet is optional and best-effort
     if out_parquet is not None:
         try:
-            df.to_parquet(out_parquet, index=False)
+            _parquet_safe_frame(df).to_parquet(out_parquet, index=False)
         except Exception:
             paths["parquet"] = None
 

@@ -7,4 +7,5 @@ pandas>=2.0
 pyarrow>=12.0
 pyinstaller>=6.18.0
 scikit-learn>=1.3
+catboost>=1.2
 numpy>=1.24
