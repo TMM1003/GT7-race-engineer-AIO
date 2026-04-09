@@ -106,6 +106,41 @@ Each dataset build produces:
 
 ---
 
+## Model Training
+
+The `Research/Config` tab now includes an offline **Model Training** panel for
+training saved regression models directly from:
+
+- the current run
+- an existing run folder
+- a `corner_dataset.csv` or `corner_dataset.parquet` file
+
+The training workflow supports:
+
+- `CatBoost`, `Random Forest`, and `Ridge`
+- `all_numeric` and `heuristics` feature modes
+- grouped cross-validation
+- permutation-importance evaluation
+- optional dataset rebuild before training
+- saved model artifacts written into a run's `models/` folder
+
+Typical run-folder output:
+
+- `models/<model>_<feature_mode>.joblib`
+- `models/<model>_<feature_mode>.json`
+
+You can also train from the CLI:
+
+```bash
+python scripts/train_model.py data/runs/<RUN_ID> --model catboost --feature-mode all_numeric
+```
+
+For the full UI walkthrough and tutorial, see:
+
+- [ModelTraining_README.md](ModelTraining_README.md)
+
+---
+
 ## Project Structure
 
 ```text

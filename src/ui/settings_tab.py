@@ -14,15 +14,33 @@ class SettingsTab(QtWidgets.QWidget):
     sig_start_new_run = QtCore.Signal()
     sig_open_run_dir = QtCore.Signal()
     sig_export_dataset = QtCore.Signal()
+    sig_train_model = QtCore.Signal(dict)
     sig_apply_run_metadata = QtCore.Signal(dict)
     sig_start_new_run_with_meta = QtCore.Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        layout = QtWidgets.QVBoxLayout(self)
+        root_layout = QtWidgets.QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        root_layout.addWidget(scroll)
+
+        content = QtWidgets.QWidget()
+        scroll.setWidget(content)
+
+        layout = QtWidgets.QVBoxLayout(content)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        layout.setSizeConstraint(QtWidgets.QLayout.SetMinAndMaxSize)
 
         form = QtWidgets.QFormLayout()
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapLongRows)
+        form.setVerticalSpacing(8)
         layout.addLayout(form)
 
         # Research export master toggle
@@ -138,7 +156,13 @@ class SettingsTab(QtWidgets.QWidget):
 
         # Run Metadata
         meta_box = QtWidgets.QGroupBox("Run Metadata")
+        meta_box.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Maximum,
+        )
         meta_layout = QtWidgets.QVBoxLayout(meta_box)
+        meta_layout.setContentsMargins(12, 12, 12, 12)
+        meta_layout.setSpacing(10)
 
         # Read-only current labels
         self._lbl_run_id = QtWidgets.QLabel("—")
@@ -148,6 +172,9 @@ class SettingsTab(QtWidgets.QWidget):
         self._lbl_alias = QtWidgets.QLabel("—")
 
         ro = QtWidgets.QFormLayout()
+        ro.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        ro.setRowWrapPolicy(QtWidgets.QFormLayout.WrapLongRows)
+        ro.setVerticalSpacing(8)
         ro.addRow("Run ID", self._lbl_run_id)
         ro.addRow("Run dir", self._lbl_run_dir)
         ro.addRow("Track", self._lbl_track)
@@ -176,9 +203,16 @@ class SettingsTab(QtWidgets.QWidget):
         self.edit_notes.setPlaceholderText(
             "Optional notes: tires, BoP, setup, objective, conditions, etc."
         )
-        self.edit_notes.setFixedHeight(70)
+        self.edit_notes.setMinimumHeight(90)
+        self.edit_notes.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.MinimumExpanding,
+        )
 
         fm = QtWidgets.QFormLayout()
+        fm.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        fm.setRowWrapPolicy(QtWidgets.QFormLayout.WrapLongRows)
+        fm.setVerticalSpacing(8)
         fm.addRow("Track name", self.edit_track_name)
         fm.addRow("Car name", self.edit_car_name)
         fm.addRow("Run alias", alias_row)
@@ -203,6 +237,8 @@ class SettingsTab(QtWidgets.QWidget):
 
         self._gt7db = None
         self._car_id_lookup_enabled = False
+        self._current_run_id: Optional[str] = None
+        self._current_run_dir: Optional[str] = None
         self._last_auto_car_name: Optional[str] = None
         self._detected_car_id: Optional[int] = None
         self._detected_car_name: Optional[str] = None
@@ -230,6 +266,118 @@ class SettingsTab(QtWidgets.QWidget):
 
         self.edit_car_name.textEdited.connect(self._on_car_name_user_edited)
 
+        train_box = QtWidgets.QGroupBox("Model Training")
+        train_layout = QtWidgets.QVBoxLayout(train_box)
+        train_layout.setContentsMargins(12, 12, 12, 12)
+        train_layout.setSpacing(10)
+
+        self.lbl_train_source_hint = QtWidgets.QLabel("Current run: -")
+        self.lbl_train_source_hint.setWordWrap(True)
+        train_layout.addWidget(self.lbl_train_source_hint)
+
+        train_form = QtWidgets.QFormLayout()
+        train_form.setFieldGrowthPolicy(
+            QtWidgets.QFormLayout.AllNonFixedFieldsGrow
+        )
+        train_form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapLongRows)
+        train_form.setVerticalSpacing(8)
+
+        self.edit_train_path = QtWidgets.QLineEdit()
+        self.edit_train_path.setPlaceholderText(
+            "Leave blank to use the current run, or choose a run folder / dataset file"
+        )
+        train_form.addRow("Training source", self.edit_train_path)
+
+        train_source_btns = QtWidgets.QHBoxLayout()
+        self.btn_use_current_run_for_training = QtWidgets.QPushButton(
+            "Use current run"
+        )
+        self.btn_use_current_run_for_training.clicked.connect(
+            self._use_current_run_for_training
+        )
+        train_source_btns.addWidget(self.btn_use_current_run_for_training)
+
+        self.btn_browse_train_run = QtWidgets.QPushButton("Browse run")
+        self.btn_browse_train_run.clicked.connect(self._browse_train_run)
+        train_source_btns.addWidget(self.btn_browse_train_run)
+
+        self.btn_browse_train_dataset = QtWidgets.QPushButton(
+            "Browse dataset"
+        )
+        self.btn_browse_train_dataset.clicked.connect(
+            self._browse_train_dataset
+        )
+        train_source_btns.addWidget(self.btn_browse_train_dataset)
+        train_source_btns.addStretch(1)
+        train_form.addRow("", train_source_btns)
+
+        self.combo_train_model = QtWidgets.QComboBox()
+        self.combo_train_model.addItem("CatBoost", "catboost")
+        self.combo_train_model.addItem("Random Forest", "rf")
+        self.combo_train_model.addItem("Ridge", "ridge")
+        train_form.addRow("Model", self.combo_train_model)
+
+        self.combo_train_feature_mode = QtWidgets.QComboBox()
+        self.combo_train_feature_mode.addItem(
+            "All numeric features", "all_numeric"
+        )
+        self.combo_train_feature_mode.addItem(
+            "Heuristics only", "heuristics"
+        )
+        train_form.addRow("Feature mode", self.combo_train_feature_mode)
+
+        self.spin_train_seed = QtWidgets.QSpinBox()
+        self.spin_train_seed.setRange(0, 999999)
+        self.spin_train_seed.setValue(7)
+        train_form.addRow("Seed", self.spin_train_seed)
+
+        self.spin_train_splits = QtWidgets.QSpinBox()
+        self.spin_train_splits.setRange(2, 20)
+        self.spin_train_splits.setValue(5)
+        train_form.addRow("CV splits", self.spin_train_splits)
+
+        self.spin_train_perm_repeats = QtWidgets.QSpinBox()
+        self.spin_train_perm_repeats.setRange(0, 100)
+        self.spin_train_perm_repeats.setValue(20)
+        train_form.addRow(
+            "Permutation repeats", self.spin_train_perm_repeats
+        )
+
+        train_layout.addLayout(train_form)
+
+        self.chk_train_rebuild_dataset = QtWidgets.QCheckBox(
+            "Rebuild/export the corner dataset first when training from a run folder"
+        )
+        self.chk_train_rebuild_dataset.setChecked(True)
+        train_layout.addWidget(self.chk_train_rebuild_dataset)
+
+        self.chk_train_overwrite = QtWidgets.QCheckBox(
+            "Overwrite existing model artifacts with the same name"
+        )
+        train_layout.addWidget(self.chk_train_overwrite)
+
+        train_btns = QtWidgets.QHBoxLayout()
+        self.btn_train_model = QtWidgets.QPushButton("Train model")
+        self.btn_train_model.clicked.connect(self._emit_train_model)
+        train_btns.addWidget(self.btn_train_model)
+        train_btns.addStretch(1)
+        train_layout.addLayout(train_btns)
+
+        self.lbl_train_status = QtWidgets.QLabel("Idle")
+        self.lbl_train_status.setWordWrap(True)
+        train_layout.addWidget(self.lbl_train_status)
+
+        self.txt_train_status = QtWidgets.QPlainTextEdit()
+        self.txt_train_status.setReadOnly(True)
+        self.txt_train_status.setMinimumHeight(120)
+        self.txt_train_status.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.MinimumExpanding,
+        )
+        train_layout.addWidget(self.txt_train_status)
+
+        layout.addWidget(train_box)
+
         # Buttons
         btns = QtWidgets.QHBoxLayout()
         layout.addLayout(btns)
@@ -253,8 +401,6 @@ class SettingsTab(QtWidgets.QWidget):
         btns.addStretch(1)
         layout.addStretch(1)
 
-        self.btn_export_dataset.clicked.connect(self._on_export_clicked)
-
     def set_current_run_info(
         self,
         run_id: str,
@@ -263,11 +409,32 @@ class SettingsTab(QtWidgets.QWidget):
         car: str | None = None,
         alias: str | None = None,
     ) -> None:
+        old_run_dir = self._current_run_dir
+        self._current_run_id = run_id or None
+        self._current_run_dir = run_dir or None
         self._lbl_run_id.setText(run_id or "—")
         self._lbl_run_dir.setText(run_dir or "—")
         self._lbl_track.setText(track or "—")
         self._lbl_car.setText(car or "—")
         self._lbl_alias.setText(alias or "—")
+        if self._current_run_dir:
+            self.lbl_train_source_hint.setText(
+                f"Current run: {run_id or '-'}\n{self._current_run_dir}"
+            )
+        else:
+            self.lbl_train_source_hint.setText("Current run: -")
+
+        current_path = self.edit_train_path.text().strip()
+        if self._current_run_dir and (
+            not current_path or (old_run_dir and current_path == old_run_dir)
+        ):
+            self.edit_train_path.setText(self._current_run_dir)
+        elif (
+            not self._current_run_dir
+            and old_run_dir
+            and current_path == old_run_dir
+        ):
+            self.edit_train_path.clear()
 
     def set_reference_info(
         self, ref_lap: int | None, ref_time_ms: int | None
@@ -405,6 +572,108 @@ class SettingsTab(QtWidgets.QWidget):
 
     def _on_export_clicked(self) -> None:
         self.sig_export_dataset.emit()
+
+    def _use_current_run_for_training(self) -> None:
+        if self._current_run_dir:
+            self.edit_train_path.setText(self._current_run_dir)
+
+    def _browse_train_run(self) -> None:
+        start_dir = (
+            self.edit_train_path.text().strip()
+            or self._current_run_dir
+            or self.edit_output_root.text().strip()
+            or "data/runs"
+        )
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Choose run folder", start_dir
+        )
+        if selected:
+            self.edit_train_path.setText(selected)
+
+    def _browse_train_dataset(self) -> None:
+        start_path = (
+            self.edit_train_path.text().strip()
+            or self._current_run_dir
+            or self.edit_output_root.text().strip()
+            or "data/runs"
+        )
+        selected, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Choose dataset file",
+            start_path,
+            "Datasets (*.csv *.parquet);;All files (*.*)",
+        )
+        if selected:
+            self.edit_train_path.setText(selected)
+
+    def _emit_train_model(self) -> None:
+        source_path = (
+            self.edit_train_path.text().strip()
+            or self._current_run_dir
+            or ""
+        )
+        if not source_path:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No training source",
+                (
+                    "Choose a run folder or dataset file, or use the current "
+                    "run before starting model training."
+                ),
+            )
+            return
+
+        self.sig_train_model.emit(
+            {
+                "source_path": source_path,
+                "model_name": str(self.combo_train_model.currentData()),
+                "feature_mode": str(
+                    self.combo_train_feature_mode.currentData()
+                ),
+                "seed": int(self.spin_train_seed.value()),
+                "splits": int(self.spin_train_splits.value()),
+                "perm_repeats": int(self.spin_train_perm_repeats.value()),
+                "overwrite": bool(self.chk_train_overwrite.isChecked()),
+                "rebuild_dataset": bool(
+                    self.chk_train_rebuild_dataset.isChecked()
+                ),
+            }
+        )
+
+    def set_training_busy(self, busy: bool) -> None:
+        for widget in [
+            self.edit_train_path,
+            self.btn_use_current_run_for_training,
+            self.btn_browse_train_run,
+            self.btn_browse_train_dataset,
+            self.combo_train_model,
+            self.combo_train_feature_mode,
+            self.spin_train_seed,
+            self.spin_train_splits,
+            self.spin_train_perm_repeats,
+            self.chk_train_rebuild_dataset,
+            self.chk_train_overwrite,
+        ]:
+            widget.setEnabled(not busy)
+        self.btn_train_model.setEnabled(not busy)
+        self.btn_train_model.setText("Training..." if busy else "Train model")
+        if busy:
+            self.lbl_train_status.setText("Training...")
+            self.lbl_train_status.setStyleSheet("")
+        elif self.lbl_train_status.text() == "Training...":
+            self.lbl_train_status.setText("Ready")
+
+    def set_training_status(self, text: str, *, error: bool = False) -> None:
+        self.lbl_train_status.setText("Failed" if error else "Ready")
+        self.lbl_train_status.setStyleSheet(
+            "color: #cc6666;" if error else ""
+        )
+        self.txt_train_status.setPlainText(text or "")
+
+    def append_training_status(self, text: str) -> None:
+        if not text:
+            return
+        self.txt_train_status.appendPlainText(text)
 
     def _browse_output_root(self) -> None:
         d = QtWidgets.QFileDialog.getExistingDirectory(

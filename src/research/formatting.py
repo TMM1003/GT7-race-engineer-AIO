@@ -12,3 +12,4 @@ def ensure_dirs(run_dir: Path) -> None:
     (run_dir / "laps").mkdir(parents=True, exist_ok=True)
     (run_dir / "corners").mkdir(parents=True, exist_ok=True)
     (run_dir / "baselines").mkdir(parents=True, exist_ok=True)
+    (run_dir / "models").mkdir(parents=True, exist_ok=True)

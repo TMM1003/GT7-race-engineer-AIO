@@ -57,6 +57,7 @@ def create_run(
         laps/
         corners/
         baselines/
+        models/
     """
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -75,6 +76,7 @@ def create_run(
     (run_dir / "laps").mkdir(exist_ok=True)
     (run_dir / "corners").mkdir(exist_ok=True)
     (run_dir / "baselines").mkdir(exist_ok=True)
+    (run_dir / "models").mkdir(exist_ok=True)
 
     meta: Dict[str, Any] = {
         "run_id": run_id,

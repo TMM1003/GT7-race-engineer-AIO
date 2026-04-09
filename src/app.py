@@ -5,6 +5,7 @@ import subprocess
 import platform
 import json
 import time
+import traceback
 
 from dataclasses import replace
 from pathlib import Path
@@ -23,6 +24,7 @@ from src.research.registry import create_run
 from src.research.export import export_lap_bundle
 from src.research.schema import FeatureSpec, SCHEMA_VERSION, schema_hash
 from src.research.dataset import build_and_save_corner_dataset
+from src.research.train_pipeline import train_and_save_model
 
 from src.gt7db import GT7Database
 
@@ -38,6 +40,126 @@ def _safe_write_json(path: Path, obj: dict) -> None:
     path.write_text(
         json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8"
     )
+
+
+class ModelTrainingWorker(QtCore.QObject):
+    sig_progress = QtCore.Signal(str)
+    sig_finished = QtCore.Signal(dict)
+    sig_failed = QtCore.Signal(str)
+
+    def __init__(self, request: dict):
+        super().__init__()
+        self.request = dict(request or {})
+
+    @QtCore.Slot()
+    def run(self) -> None:
+        try:
+            source_path = str(self.request.get("source_path") or "").strip()
+            if not source_path:
+                raise ValueError(
+                    "No training source was provided. Choose a run folder or dataset file."
+                )
+
+            source = Path(source_path)
+            if not source.exists():
+                raise FileNotFoundError(f"Training source not found: {source}")
+
+            dataset_path: Path = source
+            dataset_summary = None
+
+            if source.is_dir() and bool(self.request.get("rebuild_dataset", True)):
+                self.sig_progress.emit(
+                    "[training] Rebuilding corner dataset from run artifacts..."
+                )
+                paths, report = build_and_save_corner_dataset(
+                    run_dir=source,
+                    overwrite=True,
+                )
+                dataset_path = paths.get("parquet") or paths.get("csv")
+                if dataset_path is None:
+                    raise RuntimeError(
+                        "Dataset rebuild did not produce a CSV or Parquet file."
+                    )
+                dataset_summary = {
+                    "rows_emitted": report.rows_emitted,
+                    "corners_seen": report.corners_seen,
+                    "corners_skipped": report.corners_skipped,
+                    "schema_hash": report.schema_hash,
+                    "schema_version": report.schema_version,
+                }
+                self.sig_progress.emit(
+                    f"[training] Dataset ready: {dataset_path}"
+                )
+            else:
+                self.sig_progress.emit(f"[training] Using source: {source}")
+
+            model_name = str(self.request.get("model_name") or "catboost")
+            feature_mode = str(
+                self.request.get("feature_mode") or "all_numeric"
+            )
+            self.sig_progress.emit(
+                f"[training] Fitting {model_name} ({feature_mode})..."
+            )
+
+            result = train_and_save_model(
+                dataset_path=dataset_path,
+                model_name=model_name,
+                feature_mode=feature_mode,
+                seed=int(self.request.get("seed", 7)),
+                n_splits=int(self.request.get("splits", 5)),
+                n_perm_repeats=int(self.request.get("perm_repeats", 20)),
+                overwrite=bool(self.request.get("overwrite", False)),
+            )
+
+            metrics = dict(result.manifest.metrics)
+            lines = [
+                f"Source: {source}",
+                f"Dataset: {dataset_path}",
+                f"Model: {result.manifest.model_name}",
+                f"Feature set: {result.manifest.feature_set}",
+                (
+                    "CV RMSE: "
+                    f"{metrics.get('rmse_mean', float('nan')):.2f} +/- "
+                    f"{metrics.get('rmse_std', float('nan')):.2f} ms"
+                ),
+                (
+                    "CV R^2: "
+                    f"{metrics.get('r2_mean', float('nan')):.3f} +/- "
+                    f"{metrics.get('r2_std', float('nan')):.3f}"
+                ),
+                f"Model artifact: {result.model_path}",
+                f"Manifest: {result.manifest_path}",
+            ]
+
+            if dataset_summary is not None:
+                lines.insert(
+                    2,
+                    (
+                        "Dataset rows: "
+                        f"{dataset_summary['rows_emitted']} "
+                        f"(seen {dataset_summary['corners_seen']}, "
+                        f"skipped {dataset_summary['corners_skipped']})"
+                    ),
+                )
+
+            if result.manifest.top_features:
+                top_line = ", ".join(
+                    f"{name} ({score:.3f})"
+                    for name, score in result.manifest.top_features[:5]
+                )
+                lines.append(f"Top features: {top_line}")
+
+            self.sig_finished.emit(
+                {
+                    "summary": "\n".join(lines),
+                    "source_path": str(source),
+                    "dataset_path": str(dataset_path),
+                    "model_path": str(result.model_path),
+                    "manifest_path": str(result.manifest_path),
+                }
+            )
+        except Exception:
+            self.sig_failed.emit(traceback.format_exc())
 
 
 class AppController(QtCore.QObject):
@@ -89,6 +211,9 @@ class AppController(QtCore.QObject):
         self.window.settings_tab.sig_export_dataset.connect(
             self._on_export_dataset
         )
+        self.window.settings_tab.sig_train_model.connect(
+            self._on_train_model
+        )
 
         self.window.sig_apply_settings.connect(self._on_apply_settings)
         self.window.sig_start_new_run.connect(self._on_start_new_run)
@@ -114,6 +239,8 @@ class AppController(QtCore.QObject):
 
         self._dbg_last_car_id = object()  # sentinel
         self._dbg_last_connected = object()
+        self._training_thread: Optional[QtCore.QThread] = None
+        self._training_worker: Optional[ModelTrainingWorker] = None
 
     @QtCore.Slot(str)
     def _on_force_ip(self, ip: str) -> None:
@@ -221,6 +348,12 @@ class AppController(QtCore.QObject):
         }
 
     def shutdown(self) -> None:
+        try:
+            if self._training_thread is not None and self._training_thread.isRunning():
+                self._training_thread.quit()
+                self._training_thread.wait(3000)
+        except Exception:
+            pass
         try:
             self.comm.stop()
         except Exception:
@@ -532,6 +665,110 @@ class AppController(QtCore.QObject):
         except Exception as e:
             print("Dataset export error:", repr(e))
 
+    def _set_training_busy(self, busy: bool) -> None:
+        try:
+            self.window.settings_tab.set_training_busy(busy)
+        except Exception:
+            pass
+
+    @QtCore.Slot(dict)
+    def _on_train_model(self, request: dict) -> None:
+        if (
+            self._training_thread is not None
+            and self._training_thread.isRunning()
+        ):
+            QtWidgets.QMessageBox.information(
+                self.window,
+                "Training in progress",
+                "A model training job is already running.",
+            )
+            return
+
+        source_path = str(request.get("source_path") or "").strip()
+        if not source_path:
+            QtWidgets.QMessageBox.warning(
+                self.window,
+                "Missing training source",
+                "Choose a run folder or dataset file before training.",
+            )
+            return
+
+        source = Path(source_path)
+        if not source.exists():
+            QtWidgets.QMessageBox.warning(
+                self.window,
+                "Training source not found",
+                f"The selected training source does not exist:\n{source}",
+            )
+            return
+
+        self._set_training_busy(True)
+        try:
+            self.window.settings_tab.set_training_status(
+                (
+                    "Training queued.\n"
+                    f"Source: {source}\n"
+                    f"Model: {request.get('model_name')}\n"
+                    f"Feature mode: {request.get('feature_mode')}"
+                )
+            )
+            self.window.settings_tab.append_training_status(
+                "[training] Starting background job..."
+            )
+        except Exception:
+            pass
+
+        self._training_thread = QtCore.QThread(self)
+        self._training_worker = ModelTrainingWorker(request)
+        self._training_worker.moveToThread(self._training_thread)
+
+        self._training_thread.started.connect(self._training_worker.run)
+        self._training_worker.sig_progress.connect(
+            self.window.settings_tab.append_training_status
+        )
+        self._training_worker.sig_finished.connect(self._on_training_finished)
+        self._training_worker.sig_failed.connect(self._on_training_failed)
+        self._training_worker.sig_finished.connect(self._training_thread.quit)
+        self._training_worker.sig_failed.connect(self._training_thread.quit)
+        self._training_thread.finished.connect(self._on_training_thread_finished)
+        self._training_thread.finished.connect(self._training_worker.deleteLater)
+        self._training_thread.finished.connect(self._training_thread.deleteLater)
+
+        self._training_thread.start()
+
+    @QtCore.Slot(dict)
+    def _on_training_finished(self, payload: dict) -> None:
+        self._set_training_busy(False)
+        summary = str(payload.get("summary") or "").strip()
+        try:
+            self.window.settings_tab.set_training_status(summary)
+        except Exception:
+            pass
+        print("Model training complete:")
+        print(summary)
+
+    @QtCore.Slot(str)
+    def _on_training_failed(self, error_text: str) -> None:
+        self._set_training_busy(False)
+        try:
+            self.window.settings_tab.set_training_status(
+                error_text, error=True
+            )
+        except Exception:
+            pass
+        print("Model training error:")
+        print(error_text)
+        QtWidgets.QMessageBox.warning(
+            self.window,
+            "Model training failed",
+            error_text,
+        )
+
+    @QtCore.Slot()
+    def _on_training_thread_finished(self) -> None:
+        self._training_worker = None
+        self._training_thread = None
+
     def _refresh_run_meta_ui(self) -> None:
         try:
             run_id = getattr(self.run, "run_id", None) if self.run else None
@@ -541,9 +778,9 @@ class AppController(QtCore.QObject):
             self.window.set_current_run_info(
                 run_id=run_id,
                 run_dir=run_dir,
-                track_name=self._run_meta.get("track_name"),
-                car_name=self._run_meta.get("car_name"),
-                run_alias=self._run_meta.get("run_alias"),
+                track=self._run_meta.get("track_name"),
+                car=self._run_meta.get("car_name"),
+                alias=self._run_meta.get("run_alias"),
             )
         except Exception:
             pass
@@ -552,9 +789,8 @@ class AppController(QtCore.QObject):
         try:
             info = self.session.reference_info()
             self.window.set_reference_info(
-                lap_num=info.get("lap_num"),
-                lap_time_ms=info.get("lap_time_ms"),
-                locked=bool(info.get("locked", False)),
+                ref_lap=info.get("lap_num"),
+                ref_time_ms=info.get("lap_time_ms"),
             )
         except Exception:
             pass

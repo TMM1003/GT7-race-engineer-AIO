@@ -1,49 +1,55 @@
-# src/ai/inference.py
+# src/research/inference.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from statistics import fmean
+from typing import Any, Dict, Optional, Sequence
 
-# Keep this dependency-free. You can swap in torch/jax later.
+from .model_artifacts import TrainedModelBundle, load_training_bundle
 
 
 @dataclass
 class InferenceResult:
-    # Example fields; adapt to your model outputs
-    lap_score: Optional[float] = None  # e.g., probability "good lap"
-    anomaly_score: Optional[float] = None  # e.g., reconstruction error
-    # length N, for localization
+    lap_score: Optional[float] = None
+    anomaly_score: Optional[float] = None
     per_distance_score: Optional[list[float]] = None
+    corner_predictions: Optional[list[float]] = None
+    model_name: Optional[str] = None
+    feature_set: Optional[str] = None
     notes: Optional[str] = None
 
 
-class ModelBundle:
-    """
-    Placeholder container. You can implement:
-      - torch.load(...)
-      - joblib.load(...)
-      - onnxruntime session
-    """
-
-    def __init__(self, path: Path):
-        self.path = Path(path)
-        self.kind = self.path.suffix.lower()
-        self.model = None
-
-    def is_loaded(self) -> bool:
-        return self.model is not None
+ModelBundle = TrainedModelBundle
 
 
 def load_model_if_present(path: str | Path) -> Optional[ModelBundle]:
     p = Path(path)
     if not p.exists():
         return None
-    b = ModelBundle(p)
-    # Defer actual loading to your chosen framework.
-    # Keep bundle non-None so the app can show "model found" vs "not found".
-    b.model = object()
-    return b
+    return load_training_bundle(p)
+
+
+def predict_corner_rows(
+    model: Optional[ModelBundle],
+    rows: Sequence[Dict[str, Any]],
+) -> Optional[InferenceResult]:
+    if model is None:
+        return None
+
+    predictions = model.predict_rows(rows)
+    mean_prediction = float(fmean(predictions)) if predictions else None
+
+    return InferenceResult(
+        lap_score=mean_prediction,
+        corner_predictions=predictions,
+        model_name=model.manifest.model_name,
+        feature_set=model.manifest.feature_set,
+        notes=(
+            "lap_score is the mean predicted corner loss_ms across the "
+            "provided corner rows."
+        ),
+    )
 
 
 def infer_on_lap(
@@ -53,18 +59,33 @@ def infer_on_lap(
 ) -> Optional[InferenceResult]:
     """
     Runtime inference entrypoint for the app.
-    If no model is loaded, returns None.
+
+    The saved training artifacts in this repo are corner-level tabular models.
+    To use them at runtime, provide `meta["corner_rows"]` as a list of dicts
+    with the same engineered feature columns used in training.
     """
-    if model is None or not model.is_loaded():
+    if model is None:
         return None
 
-    # Stub behavior: replace with real inference.
-    # Keep deterministic structure for UI integration.
+    corner_rows = meta.get("corner_rows")
+    if isinstance(corner_rows, Sequence) and not isinstance(
+        corner_rows, (str, bytes)
+    ):
+        try:
+            return predict_corner_rows(model, corner_rows)
+        except Exception as exc:
+            return InferenceResult(
+                model_name=model.manifest.model_name,
+                feature_set=model.manifest.feature_set,
+                notes=f"Inference failed: {exc!r}",
+            )
+
     return InferenceResult(
-        lap_score=None,
-        anomaly_score=None,
-        per_distance_score=None,
-        notes=f"Model placeholder loaded from {
-            model.path.name
-        }, but inference not implemented yet.",
+        model_name=model.manifest.model_name,
+        feature_set=model.manifest.feature_set,
+        notes=(
+            "Model is loaded, but this artifact predicts corner-level rows. "
+            "Provide meta['corner_rows'] to run inference with the trained "
+            "pipeline."
+        ),
     )

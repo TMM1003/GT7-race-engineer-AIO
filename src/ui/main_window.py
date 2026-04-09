@@ -23,13 +23,13 @@ class MainWindow(QtWidgets.QMainWindow):
     sig_start_new_run = QtCore.Signal()
     sig_open_run_dir = QtCore.Signal()
     sig_export_dataset = QtCore.Signal()
+    sig_train_model = QtCore.Signal(dict)
     # Run metadata
     sig_apply_run_metadata = QtCore.Signal(dict)
     sig_start_new_run_with_meta = QtCore.Signal(dict)
 
     def __init__(self):
         super().__init__()
-        self.settings_tab = SettingsTab()
         self.setWindowTitle("GT7 Race Engineer")
         self.resize(980, 720)
 
@@ -92,6 +92,11 @@ class MainWindow(QtWidgets.QMainWindow):
         elif hasattr(self.settings_tab, "btn_export_dataset"):
             self.settings_tab.btn_export_dataset.clicked.connect(
                 self.sig_export_dataset.emit
+            )
+
+        if hasattr(self.settings_tab, "sig_train_model"):
+            self.settings_tab.sig_train_model.connect(
+                self.sig_train_model.emit
             )
 
         # Dockable Panels
@@ -167,32 +172,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if theme_default in self._theme_actions
             else "studio_gray"
         )
-
-        def set_controller(self, controller: object) -> None:
-            self._controller = controller
-
-        def set_current_run_info(
-            self,
-            run_id: str,
-            run_dir: str,
-            track: str | None = None,
-            car: str | None = None,
-            alias: str | None = None,
-        ) -> None:
-            if hasattr(self, "settings_tab") and hasattr(
-                self.settings_tab, "set_current_run_info"
-            ):
-                self.settings_tab.set_current_run_info(
-                    run_id, run_dir, track=track, car=car, alias=alias
-                )
-
-        def set_reference_info(
-            self, ref_lap: int | None, ref_time_ms: int | None
-        ) -> None:
-            if hasattr(self, "settings_tab") and hasattr(
-                self.settings_tab, "set_reference_info"
-            ):
-                self.settings_tab.set_reference_info(ref_lap, ref_time_ms)
 
     def _make_dock(
         self, title: str, widget: QtWidgets.QWidget
@@ -415,5 +394,48 @@ class MainWindow(QtWidgets.QMainWindow):
         # Event to log area
         try:
             self.log.appendPlainText(str(ev))
+        except Exception:
+            pass
+
+    def set_controller(self, controller: object) -> None:
+        self._controller = controller
+
+    def set_current_run_info(
+        self,
+        run_id: str,
+        run_dir: str,
+        track: str | None = None,
+        car: str | None = None,
+        alias: str | None = None,
+        **kwargs,
+    ) -> None:
+        track = kwargs.get("track_name", track)
+        car = kwargs.get("car_name", car)
+        alias = kwargs.get("run_alias", alias)
+        if hasattr(self, "settings_tab") and hasattr(
+            self.settings_tab, "set_current_run_info"
+        ):
+            self.settings_tab.set_current_run_info(
+                run_id, run_dir, track=track, car=car, alias=alias
+            )
+
+    def set_reference_info(
+        self,
+        ref_lap: int | None = None,
+        ref_time_ms: int | None = None,
+        **kwargs,
+    ) -> None:
+        ref_lap = kwargs.get("lap_num", ref_lap)
+        ref_time_ms = kwargs.get("lap_time_ms", ref_time_ms)
+        if hasattr(self, "settings_tab") and hasattr(
+            self.settings_tab, "set_reference_info"
+        ):
+            self.settings_tab.set_reference_info(ref_lap, ref_time_ms)
+
+    def set_qa_summary(self, text: str) -> None:
+        if not text:
+            return
+        try:
+            self.log.appendPlainText(text)
         except Exception:
             pass

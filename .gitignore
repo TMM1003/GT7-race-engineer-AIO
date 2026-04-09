@@ -15,3 +15,9 @@ Baselines_README.txt
 Notes.txt
 setup.bat
 referencePapers/
+
+# Local scratch notes / ad hoc command reminders
+src/research/modeTrain.txt
+
+# Temporary local image experiments
+tmp_*.png
