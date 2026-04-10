@@ -5,8 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 from src.research.model_artifacts import load_training_bundle
-from src.research.train_pipeline import train_and_save_model
+from src.research.train_pipeline import _select_training_frame, train_and_save_model
 
 
 def _write_dataset(run_dir: Path) -> Path:
@@ -87,6 +89,35 @@ def _write_dataset(run_dir: Path) -> Path:
 
 
 class TrainPipelineTests(unittest.TestCase):
+    def test_select_training_frame_normalizes_nullable_float_columns(self) -> None:
+        df = pd.DataFrame(
+            {
+                "loss_ms": [120.0, 95.0, 88.0],
+                "lap_num": [1, 1, 2],
+                "brake_start_delta_m": pd.array(
+                    [1.0, None, -0.5], dtype="Float64"
+                ),
+                "throttle_on_delta_m": [0.5, -1.0, 0.25],
+                "min_speed_delta_kmh": [2.0, 1.5, 0.5],
+                "exit_speed_delta_kmh": [0.0, -1.0, 1.0],
+            }
+        )
+
+        X, y, feature_names = _select_training_frame(df, "heuristics")
+
+        self.assertEqual(
+            feature_names,
+            [
+                "brake_start_delta_m",
+                "throttle_on_delta_m",
+                "min_speed_delta_kmh",
+                "exit_speed_delta_kmh",
+            ],
+        )
+        self.assertTrue(all(str(dtype) == "float64" for dtype in X.dtypes))
+        self.assertEqual(len(y), 3)
+        self.assertTrue(pd.isna(X.loc[1, "brake_start_delta_m"]))
+
     def test_train_and_save_model_writes_reloadable_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = Path(tmpdir)

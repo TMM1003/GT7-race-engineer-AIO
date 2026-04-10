@@ -1,13 +1,11 @@
 .venv/
 __pycache__/
-data/
 dist/
 build/
 *.spec
 WhatsNext.md
 DocumentFormatTesting/
 packaging.txt
-data/
 dist/
 build/
 packaging/
@@ -15,6 +13,15 @@ Baselines_README.txt
 Notes.txt
 setup.bat
 referencePapers/
+data/gt7db
+data/runBACKUPs
+data/runs/officialRun
+MotorsportThesisProposal.pdf
+ML_RunCommands.txt
+Images/
+tests/research
+src/research
+scripts/
 
 # Local scratch notes / ad hoc command reminders
 src/research/modeTrain.txt

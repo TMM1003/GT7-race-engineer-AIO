@@ -10,6 +10,7 @@ from src.ui.track_map import TrackMapWidget
 from src.ui.graphs import GraphsWidget, GraphsOverlayWidget
 from src.ui.telemetry_table import TelemetryTableWidget
 from src.ui.corner_table import CornerTableWidget
+from src.ui.replay_tab import ReplayTab
 from src.ui.settings_tab import SettingsTab
 from pathlib import Path
 from src.gt7db.loader import GT7Database
@@ -56,6 +57,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Settings / Research tab
         self.settings_tab = SettingsTab()
         self.tabs.addTab(self.settings_tab, "Research/Config")
+
+        # Offline replay tab for poster capture
+        self.replay_tab = ReplayTab()
+        self.tabs.addTab(self.replay_tab, "Replay")
 
         self._gt7db = None
         try:
@@ -418,6 +423,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.settings_tab.set_current_run_info(
                 run_id, run_dir, track=track, car=car, alias=alias
             )
+        if hasattr(self, "replay_tab") and hasattr(
+            self.replay_tab, "set_current_run_info"
+        ):
+            self.replay_tab.set_current_run_info(run_id, run_dir)
 
     def set_reference_info(
         self,

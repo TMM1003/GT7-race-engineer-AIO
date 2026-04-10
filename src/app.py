@@ -24,6 +24,10 @@ from src.research.registry import create_run
 from src.research.export import export_lap_bundle
 from src.research.schema import FeatureSpec, SCHEMA_VERSION, schema_hash
 from src.research.dataset import build_and_save_corner_dataset
+from src.research.poster_replay import (
+    PosterReplayPlayer,
+    load_poster_replay_run,
+)
 from src.research.train_pipeline import train_and_save_model
 
 from src.gt7db import GT7Database
@@ -214,6 +218,33 @@ class AppController(QtCore.QObject):
         self.window.settings_tab.sig_train_model.connect(
             self._on_train_model
         )
+        if hasattr(self.window, "replay_tab") and hasattr(
+            self.window.replay_tab, "sig_replay_load"
+        ):
+            self.window.replay_tab.sig_replay_load.connect(
+                self._on_replay_load
+            )
+            self.window.replay_tab.sig_replay_lap_changed.connect(
+                self._on_replay_lap_changed
+            )
+            self.window.replay_tab.sig_replay_speed_changed.connect(
+                self._on_replay_speed_changed
+            )
+            self.window.replay_tab.sig_replay_play.connect(
+                self._on_replay_play
+            )
+            self.window.replay_tab.sig_replay_pause.connect(
+                self._on_replay_pause
+            )
+            self.window.replay_tab.sig_replay_restart.connect(
+                self._on_replay_restart
+            )
+            self.window.replay_tab.sig_replay_stop.connect(
+                self._on_replay_stop
+            )
+            self.window.replay_tab.sig_replay_seek.connect(
+                self._on_replay_seek
+            )
 
         self.window.sig_apply_settings.connect(self._on_apply_settings)
         self.window.sig_start_new_run.connect(self._on_start_new_run)
@@ -241,6 +272,7 @@ class AppController(QtCore.QObject):
         self._dbg_last_connected = object()
         self._training_thread: Optional[QtCore.QThread] = None
         self._training_worker: Optional[ModelTrainingWorker] = None
+        self._replay_player: Optional[PosterReplayPlayer] = None
 
     @QtCore.Slot(str)
     def _on_force_ip(self, ip: str) -> None:
@@ -254,6 +286,13 @@ class AppController(QtCore.QObject):
         self.comm.restart()
 
     def _tick(self) -> None:
+        if (
+            self._replay_player is not None
+            and self._replay_player.session is not None
+        ):
+            self._tick_replay()
+            return
+
         snap = self.comm.snapshot()
         if not snap:
             return
@@ -281,6 +320,10 @@ class AppController(QtCore.QObject):
             self.window.settings_tab.update_from_snapshot(snap)
         except Exception as e:
             print("SettingsTab update error:", repr(e))
+        try:
+            self.window.telemetry_table.update_from_snapshot(snap)
+        except Exception as e:
+            print("TelemetryTable update error:", repr(e))
 
         # Keep core state synchronized even when telemetry is not "live" for
         # exports.
@@ -308,6 +351,55 @@ class AppController(QtCore.QObject):
         # Keep reference label current
         if (self._tick_i % 30) == 0:
             self._refresh_reference_ui()
+
+    def _tick_replay(self) -> None:
+        if self._replay_player is None or self._replay_player.session is None:
+            return
+
+        snap = self._replay_player.tick()
+        if not snap:
+            return
+
+        diag = self._build_replay_diagnostics(snap)
+
+        try:
+            self.window.set_connected(True)
+            self.window.update_connection_diagnostics(diag)
+        except Exception as e:
+            print("Replay overview update error:", repr(e))
+
+        try:
+            self.window.settings_tab.update_from_snapshot(snap)
+        except Exception as e:
+            print("Replay SettingsTab update error:", repr(e))
+        try:
+            self.window.telemetry_table.update_from_snapshot(snap)
+        except Exception as e:
+            print("Replay TelemetryTable update error:", repr(e))
+
+        self.state.update(snap)
+        self.window.update_state(self.state, snap)
+
+        self._tick_i = getattr(self, "_tick_i", 0) + 1
+        self._viz_div = getattr(self, "_viz_div", 5)
+
+        if (self._tick_i % self._viz_div) == 0:
+            try:
+                self.window.update_visualizations(
+                    self._replay_player.session, snap
+                )
+            except Exception as e:
+                print("Replay visualization error:", repr(e))
+
+        try:
+            cur_frame, max_frame = self._replay_player.progress()
+            self.window.replay_tab.set_replay_progress(
+                cur_frame,
+                max_frame,
+                playing=bool(self._replay_player.playing),
+            )
+        except Exception:
+            pass
 
     def _build_connection_diagnostics(self, snap: dict) -> dict:
         configured_ip = getattr(self.comm, "playstation_ip", None)
@@ -345,6 +437,32 @@ class AppController(QtCore.QObject):
             "last_sender_ip": snap.get("last_sender_ip"),
             "send_port": getattr(self.comm, "SEND_PORT", None),
             "recv_port": getattr(self.comm, "RECV_PORT", None),
+        }
+
+    def _build_replay_diagnostics(self, snap: dict) -> dict:
+        cur_frame = 0
+        if self._replay_player is not None:
+            cur_frame, _ = self._replay_player.progress()
+        return {
+            "connected": True,
+            "in_race": True,
+            "paused": bool(not self._replay_player.playing)
+            if self._replay_player is not None
+            else False,
+            "mode": "REPLAY",
+            "configured_ip": None,
+            "active_ip": "OFFLINE",
+            "rx_age_s": 0.0,
+            "telemetry_seq": snap.get("telemetry_seq", cur_frame),
+            "package_id": snap.get("package_id", cur_frame),
+            "connection_error": None,
+            "bound_recv_port": None,
+            "rx_datagrams": cur_frame + 1,
+            "rx_valid_packets": cur_frame + 1,
+            "tx_heartbeats": 0,
+            "last_sender_ip": None,
+            "send_port": None,
+            "recv_port": None,
         }
 
     def shutdown(self) -> None:
@@ -768,6 +886,157 @@ class AppController(QtCore.QObject):
     def _on_training_thread_finished(self) -> None:
         self._training_worker = None
         self._training_thread = None
+
+    @QtCore.Slot(str)
+    def _on_replay_load(self, source_path: str) -> None:
+        try:
+            replay_run = load_poster_replay_run(source_path)
+            player = PosterReplayPlayer(replay_run)
+            default_laps = [
+                lap
+                for lap in replay_run.lap_numbers()
+                if lap != replay_run.reference_lap_num
+            ]
+            default_lap = (
+                default_laps[-1]
+                if default_laps
+                else replay_run.lap_numbers()[-1]
+            )
+            try:
+                rate = float(
+                    self.window.replay_tab.combo_replay_speed.currentData()
+                    or 1.0
+                )
+            except Exception:
+                rate = 1.0
+            player.set_speed(rate)
+            player.load_lap(
+                default_lap, reference_lap_num=replay_run.reference_lap_num
+            )
+            self._replay_player = player
+
+            self.window.replay_tab.set_replay_laps(
+                replay_run.lap_numbers(),
+                reference_lap_num=replay_run.reference_lap_num,
+                selected_lap_num=default_lap,
+            )
+            cur_frame, max_frame = player.progress()
+            self.window.replay_tab.set_replay_progress(
+                cur_frame, max_frame, playing=False
+            )
+            self.window.replay_tab.set_replay_status(
+                (
+                    "Replay loaded.\n"
+                    f"Run: {replay_run.run_dir}\n"
+                    f"Lap: {default_lap}\n"
+                    f"Reference: {replay_run.reference_lap_num or '-'}"
+                )
+            )
+        except Exception as e:
+            self._replay_player = None
+            try:
+                self.window.replay_tab.set_replay_status(str(e), error=True)
+            except Exception:
+                pass
+            QtWidgets.QMessageBox.warning(
+                self.window,
+                "Replay load failed",
+                str(e),
+            )
+
+    @QtCore.Slot(int)
+    def _on_replay_lap_changed(self, lap_num: int) -> None:
+        if self._replay_player is None:
+            return
+        try:
+            self._replay_player.load_lap(
+                int(lap_num),
+                reference_lap_num=self._replay_player.run.reference_lap_num,
+            )
+            cur_frame, max_frame = self._replay_player.progress()
+            self.window.replay_tab.set_replay_progress(
+                cur_frame, max_frame, playing=False
+            )
+            self.window.replay_tab.set_replay_status(
+                (
+                    f"Replay lap changed to {lap_num}.\n"
+                    f"Reference: {self._replay_player.reference_lap_num or '-'}"
+                )
+            )
+        except Exception as e:
+            self.window.replay_tab.set_replay_status(str(e), error=True)
+
+    @QtCore.Slot(float)
+    def _on_replay_speed_changed(self, rate: float) -> None:
+        if self._replay_player is None:
+            return
+        self._replay_player.set_speed(float(rate))
+        self.window.replay_tab.set_replay_status(
+            (
+                f"Replay ready.\n"
+                f"Lap: {self._replay_player.selected_lap_num}\n"
+                f"Speed: {float(rate):.2f}x"
+            )
+        )
+
+    @QtCore.Slot()
+    def _on_replay_play(self) -> None:
+        if self._replay_player is None:
+            return
+        self._replay_player.play()
+        self.window.replay_tab.set_replay_status(
+            f"Playing lap {self._replay_player.selected_lap_num}."
+        )
+
+    @QtCore.Slot()
+    def _on_replay_pause(self) -> None:
+        if self._replay_player is None:
+            return
+        self._replay_player.pause()
+        self.window.replay_tab.set_replay_status(
+            f"Replay paused on lap {self._replay_player.selected_lap_num}."
+        )
+
+    @QtCore.Slot()
+    def _on_replay_restart(self) -> None:
+        if self._replay_player is None:
+            return
+        self._replay_player.restart()
+        cur_frame, max_frame = self._replay_player.progress()
+        self.window.replay_tab.set_replay_progress(
+            cur_frame, max_frame, playing=False
+        )
+        self.window.replay_tab.set_replay_status(
+            f"Replay restarted for lap {self._replay_player.selected_lap_num}."
+        )
+
+    @QtCore.Slot()
+    def _on_replay_stop(self) -> None:
+        if self._replay_player is not None:
+            self._replay_player.stop()
+        self._replay_player = None
+        try:
+            self.window.replay_tab.set_replay_status("Replay closed.")
+            self.window.replay_tab.set_replay_progress(0, 0, playing=False)
+        except Exception:
+            pass
+
+    @QtCore.Slot(int)
+    def _on_replay_seek(self, frame_index: int) -> None:
+        if self._replay_player is None:
+            return
+        self._replay_player.pause()
+        self._replay_player.seek(int(frame_index))
+        cur_frame, max_frame = self._replay_player.progress()
+        self.window.replay_tab.set_replay_progress(
+            cur_frame, max_frame, playing=False
+        )
+        self.window.replay_tab.set_replay_status(
+            (
+                f"Replay scrubbed to frame {cur_frame} "
+                f"on lap {self._replay_player.selected_lap_num}."
+            )
+        )
 
     def _refresh_run_meta_ui(self) -> None:
         try:

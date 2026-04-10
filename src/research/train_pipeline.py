@@ -128,7 +128,11 @@ def _select_training_frame(
         raise ValueError("Dataset must contain target column 'loss_ms'.")
 
     feature_names = select_feature_names(df, feature_mode)
+    # Normalize pandas nullable numeric dtypes such as Float64 into plain
+    # numpy-backed float64 columns so sklearn transformers do not receive
+    # pandas.NA values.
     X = df[feature_names].copy().apply(pd.to_numeric, errors="coerce")
+    X = X.replace({pd.NA: np.nan}).astype("float64")
     y = df["loss_ms"].astype(float)
     return X, y, feature_names
 
