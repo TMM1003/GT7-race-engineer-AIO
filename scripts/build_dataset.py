@@ -1,6 +1,5 @@
 # scripts/build_dataset.py
 from __future__ import annotations
-from src.research.dataset import build_and_save_corner_dataset
 
 import argparse
 import sys
@@ -10,6 +9,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from src.research.dataset import build_and_save_corner_dataset
 
 
 def main() -> int:
