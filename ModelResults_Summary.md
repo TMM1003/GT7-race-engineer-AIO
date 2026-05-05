@@ -23,13 +23,13 @@ Cleaning details are recorded in `corner_dataset_cleaning.json`.
 Cleaned Spa-Francorchamps run, grouped cross-validation on `36` laps and `326`
 corner samples.
 
-| Model | Feature Set | CV RMSE (ms) | CV R^2 |
-|---|---|---:|---:|
-| CatBoost | `all_numeric` | **133.89 +/- 27.41** | **0.783 +/- 0.054** |
-| Random Forest | `all_numeric` | `138.37 +/- 22.63` | `0.769 +/- 0.032` |
-| Ridge | `all_numeric` | `154.19 +/- 19.93` | `0.711 +/- 0.038` |
-| CatBoost | `heuristics` | `207.54 +/- 21.03` | `0.477 +/- 0.037` |
-| Ridge | `heuristics` | `232.55 +/- 37.20` | `0.350 +/- 0.081` |
+| Model         | Feature Set   |         CV RMSE (ms) |              CV R^2 |
+| ------------- | ------------- | -------------------: | ------------------: |
+| CatBoost      | `all_numeric` | **133.89 +/- 27.41** | **0.783 +/- 0.054** |
+| Random Forest | `all_numeric` |   `138.37 +/- 22.63` |   `0.769 +/- 0.032` |
+| Ridge         | `all_numeric` |   `154.19 +/- 19.93` |   `0.711 +/- 0.038` |
+| CatBoost      | `heuristics`  |   `207.54 +/- 21.03` |   `0.477 +/- 0.037` |
+| Ridge         | `heuristics`  |   `232.55 +/- 37.20` |   `0.350 +/- 0.081` |
 
 ## Interpretation Notes
 
