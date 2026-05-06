@@ -1,21 +1,84 @@
+# Python / local tooling
 .venv/
 __pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
+
+# Build / packaging outputs
 dist/
 build/
 *.spec
+*.exe
+*.msi
+*.whl
+*.egg-info/
+packaging/
+packaging.txt
+
+# Local environment, secrets, and credentials
+.env
+.env.*
+!.env.example
+.envrc
+*.local
+local_settings.py
+secrets.*
+*.secret
+*.secrets.*
+credentials.json
+token.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa*
+id_ed25519*
+.netrc
+
+# Logs, databases, and local runtime files
+*.log
+logs/
+*.db
+*.sqlite
+*.sqlite3
+
+# Telemetry datasets, backups, and model artifacts
+data/gt7db/
+data/runs/
+data/runBACKUPS/
+data/runBACKUPs/
+backup/
+*.npy
+*.npz
+*.parquet
+*.joblib
+*.pkl
+*.pickle
+*.onnx
+*.pt
+*.pth
+*.h5
+*.keras
+models/
+artifacts/
+mlruns/
+
+# Local notes, references, and generated presentation assets
 WhatsNext.md
 DocumentFormatTesting/
-packaging.txt
-dist/
-build/
-packaging/
 Baselines_README.txt
 Notes.txt
 setup.bat
 referencePapers/
-data/gt7db
-data/runBACKUPs
-data/runs/officialRun
 MotorsportThesisProposal.pdf
 ML_RunCommands.txt
 Images/
@@ -25,6 +88,14 @@ scripts/
 
 # Local scratch notes / ad hoc command reminders
 src/research/modeTrain.txt
+Notes_References_ProjectPieces/
 
 # Temporary local image experiments
 tmp_*.png
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

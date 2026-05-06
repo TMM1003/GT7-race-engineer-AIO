@@ -7,6 +7,7 @@ import pyqtgraph as pg
 from src.core.telemetry_session import (
     TelemetrySession,
     LapData,
+    ReplayComparisonState,
     _resample_by_distance,
 )
 
@@ -64,7 +65,8 @@ class TrackMapWidget(QtWidgets.QWidget):
         grid.addWidget(self._hdr("S3"), 0, 3)
 
         # Ref row
-        grid.addWidget(self._hdr("Ref"), 1, 0)
+        self._ref_hdr = self._hdr("Ref")
+        grid.addWidget(self._ref_hdr, 1, 0)
         self._ref_s1 = self._cell(TIME_PLACEHOLDER)
         self._ref_s2 = self._cell(TIME_PLACEHOLDER)
         self._ref_s3 = self._cell(TIME_PLACEHOLDER)
@@ -73,7 +75,8 @@ class TrackMapWidget(QtWidgets.QWidget):
         grid.addWidget(self._ref_s3, 1, 3)
 
         # Last row
-        grid.addWidget(self._hdr("Last"), 2, 0)
+        self._last_hdr = self._hdr("Last")
+        grid.addWidget(self._last_hdr, 2, 0)
         self._last_s1 = self._cell(TIME_PLACEHOLDER)
         self._last_s2 = self._cell(TIME_PLACEHOLDER)
         self._last_s3 = self._cell(TIME_PLACEHOLDER)
@@ -123,6 +126,8 @@ class TrackMapWidget(QtWidgets.QWidget):
         # current car position
         self._car_dot = pg.ScatterPlotItem(size=10)
         self.plot.addItem(self._car_dot)
+        self._compare_dot = pg.ScatterPlotItem(size=10)
+        self.plot.addItem(self._compare_dot)
 
         # start/finish gate + sector markers
         self._gate_line = self.plot.plot([], [], pen=pg.mkPen(width=2))
@@ -132,6 +137,9 @@ class TrackMapWidget(QtWidgets.QWidget):
         layout.addWidget(self.plot, stretch=1)
 
         self._last_session_id = None
+        self._primary_color = "#2ecc71"
+        self._default_compare_color = "#3daee9"
+        self._apply_plot_colors(self._default_compare_color)
 
     def _hdr(self, text: str) -> QtWidgets.QLabel:
         lbl = QtWidgets.QLabel(text)
@@ -160,6 +168,15 @@ class TrackMapWidget(QtWidgets.QWidget):
         laps = session.completed_laps()
         ref = session.reference_lap()
         last = laps[-1] if laps else None
+        replay_compare = session.replay_comparison_state()
+        compare_color = (
+            replay_compare.compare_color
+            if replay_compare is not None
+            and replay_compare.compare_lap_num is not None
+            else self._default_compare_color
+        )
+        self._apply_plot_colors(compare_color)
+        self._apply_compare_labels(replay_compare)
 
         # draw reference lap
         if ref:
@@ -190,6 +207,7 @@ class TrackMapWidget(QtWidgets.QWidget):
         else:
             self._set_polyline(self._cur_line, [])
             self._car_dot.setData([], [])
+        self._update_compare_dot(replay_compare)
         # sector panel values
         self._update_sector_panel(session, last, ref, n=n)
 
@@ -394,9 +412,11 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._last_line.setData([], [])
         self._delta_scatter.setData([])
         self._car_dot.setData([], [])
+        self._compare_dot.setData([], [])
         self._gate_line.setData([], [])
         self._sector_scatter.setData([])
         self._cur_line.setData([], [])
+        self._apply_compare_labels(None)
 
         self._ref_s1.setText(TIME_PLACEHOLDER)
         self._ref_s2.setText(TIME_PLACEHOLDER)
@@ -422,3 +442,44 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._delta_split_fin.setStyleSheet(
             "font-family: Consolas, monospace; font-weight: 700;"
         )
+
+    def _apply_plot_colors(self, compare_color: str) -> None:
+        compare_color = compare_color or self._default_compare_color
+        self._ref_line.setPen(pg.mkPen(compare_color, width=2))
+        self._last_line.setPen(pg.mkPen(self._primary_color, width=2))
+        self._cur_line.setPen(
+            pg.mkPen(
+                self._primary_color, width=2, style=QtCore.Qt.DashLine
+            )
+        )
+        self._gate_line.setPen(pg.mkPen(compare_color, width=2))
+        self._car_dot.setBrush(pg.mkBrush(255, 255, 255, 230))
+        self._compare_dot.setBrush(pg.mkBrush(compare_color))
+
+    def _apply_compare_labels(
+        self, replay_compare: ReplayComparisonState | None
+    ) -> None:
+        if replay_compare is not None and replay_compare.compare_lap_num is not None:
+            self._ref_hdr.setText("Compare")
+            self._last_hdr.setText("Replay")
+            self.plot.setTitle("Track Map (X vs Z) - replay vs compare")
+            return
+
+        self._ref_hdr.setText("Ref")
+        self._last_hdr.setText("Last")
+        self.plot.setTitle("Track Map (X vs Z) - last vs reference")
+
+    def _update_compare_dot(
+        self, replay_compare: ReplayComparisonState | None
+    ) -> None:
+        if replay_compare is None or replay_compare.compare_lap_num is None:
+            self._compare_dot.setData([], [])
+            return
+
+        x = replay_compare.compare_position_x
+        z = replay_compare.compare_position_z
+        if x is None or z is None:
+            self._compare_dot.setData([], [])
+            return
+
+        self._compare_dot.setData([float(x)], [float(z)])

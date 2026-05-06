@@ -1,13 +1,15 @@
-# src/ui/main_window.py
 from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets, QtGui
-import pyqtgraph as pg
 
 from src.core.race_state import RaceState
 from src.core.telemetry_session import TelemetrySession
 from src.ui.track_map import TrackMapWidget
 from src.ui.graphs import GraphsWidget, GraphsOverlayWidget
+from src.ui.graph_colors import (
+    DEFAULT_GRAPH_COLOR_SETTINGS,
+    normalized_graph_color_settings,
+)
 from src.ui.telemetry_table import TelemetryTableWidget
 from src.ui.corner_table import CornerTableWidget
 from src.ui.replay_tab import ReplayTab
@@ -103,6 +105,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.settings_tab.sig_train_model.connect(
                 self.sig_train_model.emit
             )
+        self.replay_tab.sig_graph_colors_changed.connect(
+            self.apply_graph_color_settings
+        )
 
         # Dockable Panels
         self.track_map = TrackMapWidget()
@@ -177,6 +182,10 @@ class MainWindow(QtWidgets.QMainWindow):
             if theme_default in self._theme_actions
             else "studio_gray"
         )
+        self._apply_graph_color_settings(
+            self._load_graph_color_settings(),
+            persist=False,
+        )
 
     def _make_dock(
         self, title: str, widget: QtWidgets.QWidget
@@ -196,6 +205,40 @@ class MainWindow(QtWidgets.QMainWindow):
             | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
         )
         return dock
+
+    def _load_graph_color_settings(self) -> dict[str, str]:
+        stored = {}
+        for key, default in DEFAULT_GRAPH_COLOR_SETTINGS.items():
+            stored[key] = self._settings.value(
+                f"ui/graph_colors/{key}",
+                default,
+                type=str,
+            )
+        return normalized_graph_color_settings(stored)
+
+    def _store_graph_color_settings(self, settings: dict[str, str]) -> None:
+        for key, color in settings.items():
+            self._settings.setValue(f"ui/graph_colors/{key}", color)
+
+    @QtCore.Slot(dict)
+    def apply_graph_color_settings(self, settings: dict) -> None:
+        self._apply_graph_color_settings(settings, persist=True)
+
+    def _apply_graph_color_settings(
+        self,
+        settings: dict | None,
+        *,
+        persist: bool,
+    ) -> None:
+        resolved = normalized_graph_color_settings(settings)
+        self.graphs.set_color_settings(resolved)
+        self.graphs_overlay.set_color_settings(resolved)
+        self.replay_tab.set_graph_color_settings(
+            resolved,
+            emit_signal=False,
+        )
+        if persist:
+            self._store_graph_color_settings(resolved)
 
     def _apply_theme(self, key: str) -> None:
         # Save

@@ -1,17 +1,16 @@
-# src/ui/graphs.py
 from __future__ import annotations
-from PySide6 import QtWidgets
-from src.core.telemetry_session import TelemetrySession
+
+from collections.abc import Mapping
+
+from PySide6 import QtCore, QtWidgets
 import pyqtgraph as pg
 
-
-# Keep colors consistent across all graph views.
-PENS = {
-    "speed": pg.mkPen((52, 152, 219), width=2),  # blue
-    "rpm": pg.mkPen((155, 89, 182), width=2),  # purple
-    "throttle": pg.mkPen((46, 204, 113), width=2),  # green
-    "brake": pg.mkPen((231, 76, 60), width=2),  # red
-}
+from src.core.telemetry_session import LapData, TelemetrySession
+from src.ui.graph_colors import (
+    graph_series_palette,
+    normalized_graph_color_settings,
+    overlay_series_palette,
+)
 
 
 def _time_axis(samples, window_s: float) -> tuple[list[float], int]:
@@ -37,30 +36,48 @@ def _time_axis(samples, window_s: float) -> tuple[list[float], int]:
 class GraphsWidget(QtWidgets.QWidget):
     """
     Original graphs tab: four stacked time-series plots.
-    Updated to use consistent coloring and a legend “key”.
+    Updated to use consistent coloring and a legend key.
     """
 
     def __init__(self, window_s: float = 60.0):
         super().__init__()
         self._window_s = float(window_s)
+        self._color_settings = normalized_graph_color_settings(None)
 
         layout = QtWidgets.QVBoxLayout(self)
 
         self._plots: dict[str, pg.PlotWidget] = {}
         self._curves: dict[str, pg.PlotDataItem] = {}
+        self._compare_curves: dict[str, pg.PlotDataItem] = {}
+
+        graph_palette = graph_series_palette(self._color_settings)
 
         def add_plot(key: str, title: str, y_label: str) -> None:
             w = pg.PlotWidget(title=title)
             w.showGrid(x=True, y=True, alpha=0.2)
             w.setLabel("left", y_label)
             w.setLabel("bottom", "time", units="s")
-
-            # Legend acts as the “key”
             w.addLegend(offset=(10, 10))
 
-            c = w.plot([], [], pen=PENS[key], name=title)
+            c = w.plot(
+                [],
+                [],
+                pen=pg.mkPen(graph_palette[key], width=2),
+                name="Primary",
+            )
+            c_compare = w.plot(
+                [],
+                [],
+                pen=pg.mkPen(
+                    self._color_settings["compare"],
+                    width=2,
+                    style=QtCore.Qt.DashLine,
+                ),
+                name="Compare",
+            )
             self._plots[key] = w
             self._curves[key] = c
+            self._compare_curves[key] = c_compare
             layout.addWidget(w)
 
         add_plot("speed", "Speed", "km/h")
@@ -68,12 +85,51 @@ class GraphsWidget(QtWidgets.QWidget):
         add_plot("throttle", "Throttle", "%")
         add_plot("brake", "Brake", "%")
 
+    def set_color_settings(
+        self, settings: Mapping[str, object] | None
+    ) -> None:
+        self._color_settings = normalized_graph_color_settings(settings)
+        graph_palette = graph_series_palette(self._color_settings)
+        compare_pen = pg.mkPen(
+            self._color_settings["compare"],
+            width=2,
+            style=QtCore.Qt.DashLine,
+        )
+        for key, curve in self._curves.items():
+            curve.setPen(pg.mkPen(graph_palette[key], width=2))
+        for curve in self._compare_curves.values():
+            curve.setPen(compare_pen)
+
     def update_from_session(self, session: TelemetrySession) -> None:
+        replay_compare = session.replay_comparison_state()
+        if replay_compare is not None and replay_compare.compare_lap_num is not None:
+            laps = session.completed_laps()
+            compare = session.reference_lap()
+            primary = laps[-1] if laps else None
+            if (
+                primary is not None
+                and compare is not None
+                and primary.lap_num != compare.lap_num
+            ):
+                self._update_replay_compare(
+                    primary, compare, replay_compare.compare_color
+                )
+                return
+
         samples = session.samples()
         xs, start = _time_axis(samples, self._window_s)
         if not xs:
             for c in self._curves.values():
                 c.setData([], [])
+            for c in self._compare_curves.values():
+                c.setData([], [])
+            for key, title in (
+                ("speed", "Speed"),
+                ("rpm", "RPM"),
+                ("throttle", "Throttle"),
+                ("brake", "Brake"),
+            ):
+                self._plots[key].setTitle(title)
             return
 
         spd = [samples[i].speed_kmh for i in range(start, len(samples))]
@@ -85,6 +141,65 @@ class GraphsWidget(QtWidgets.QWidget):
         self._curves["rpm"].setData(xs, rpm)
         self._curves["throttle"].setData(xs, thr)
         self._curves["brake"].setData(xs, brk)
+        for key, title in (
+            ("speed", "Speed"),
+            ("rpm", "RPM"),
+            ("throttle", "Throttle"),
+            ("brake", "Brake"),
+        ):
+            self._plots[key].setTitle(title)
+            self._compare_curves[key].setData([], [])
+
+    def _update_replay_compare(
+        self, primary: LapData, compare: LapData, compare_color: str
+    ) -> None:
+        primary_xs = self._lap_elapsed_axis(primary)
+        compare_xs = self._lap_elapsed_axis(compare)
+        if not primary_xs or not compare_xs:
+            for c in self._curves.values():
+                c.setData([], [])
+            for c in self._compare_curves.values():
+                c.setData([], [])
+            return
+
+        primary_series = {
+            "speed": [sample.speed_kmh for sample in primary.samples],
+            "rpm": [sample.rpm for sample in primary.samples],
+            "throttle": [sample.throttle for sample in primary.samples],
+            "brake": [sample.brake for sample in primary.samples],
+        }
+        compare_series = {
+            "speed": [sample.speed_kmh for sample in compare.samples],
+            "rpm": [sample.rpm for sample in compare.samples],
+            "throttle": [sample.throttle for sample in compare.samples],
+            "brake": [sample.brake for sample in compare.samples],
+        }
+
+        compare_pen = pg.mkPen(
+            compare_color or self._color_settings["compare"],
+            width=2,
+            style=QtCore.Qt.DashLine,
+        )
+        for key, title in (
+            ("speed", "Speed"),
+            ("rpm", "RPM"),
+            ("throttle", "Throttle"),
+            ("brake", "Brake"),
+        ):
+            self._plots[key].setTitle(
+                f"{title} - Lap {primary.lap_num} vs Lap {compare.lap_num}"
+            )
+            self._curves[key].setData(primary_xs, primary_series[key])
+            self._compare_curves[key].setPen(compare_pen)
+            self._compare_curves[key].setData(
+                compare_xs, compare_series[key]
+            )
+
+    def _lap_elapsed_axis(self, lap: LapData) -> list[float]:
+        if not lap.samples:
+            return []
+        start_t = float(lap.samples[0].t)
+        return [float(sample.t) - start_t for sample in lap.samples]
 
 
 class GraphsOverlayWidget(QtWidgets.QWidget):
@@ -98,11 +213,13 @@ class GraphsOverlayWidget(QtWidgets.QWidget):
     def __init__(self, window_s: float = 60.0):
         super().__init__()
         self._window_s = float(window_s)
+        self._color_settings = normalized_graph_color_settings(None)
+        overlay_palette = overlay_series_palette(self._color_settings)
 
         layout = QtWidgets.QVBoxLayout(self)
 
         self.plot = pg.PlotWidget(
-            title="Overlay (normalized) — Speed, RPM, Throttle, Brake"
+            title="Overlay (normalized) - Speed, RPM, Throttle, Brake"
         )
         self.plot.showGrid(x=True, y=True, alpha=0.2)
         self.plot.setLabel("left", "normalized", units="")
@@ -110,16 +227,28 @@ class GraphsOverlayWidget(QtWidgets.QWidget):
         self.plot.addLegend(offset=(10, 10))
 
         self._c_speed = self.plot.plot(
-            [], [], pen=PENS["speed"], name="Speed (norm)"
+            [],
+            [],
+            pen=pg.mkPen(overlay_palette["speed"], width=2),
+            name="Speed (norm)",
         )
         self._c_rpm = self.plot.plot(
-            [], [], pen=PENS["rpm"], name="RPM (norm)"
+            [],
+            [],
+            pen=pg.mkPen(overlay_palette["rpm"], width=2),
+            name="RPM (norm)",
         )
         self._c_thr = self.plot.plot(
-            [], [], pen=PENS["throttle"], name="Throttle (0–100)"
+            [],
+            [],
+            pen=pg.mkPen(overlay_palette["throttle"], width=2),
+            name="Throttle (0-100)",
         )
         self._c_brk = self.plot.plot(
-            [], [], pen=PENS["brake"], name="Brake (0–100)"
+            [],
+            [],
+            pen=pg.mkPen(overlay_palette["brake"], width=2),
+            name="Brake (0-100)",
         )
 
         layout.addWidget(self.plot)
@@ -133,6 +262,18 @@ class GraphsOverlayWidget(QtWidgets.QWidget):
         note.setWordWrap(True)
         note.setStyleSheet("color: #7f8c8d;")
         layout.addWidget(note)
+
+    def set_color_settings(
+        self, settings: Mapping[str, object] | None
+    ) -> None:
+        self._color_settings = normalized_graph_color_settings(settings)
+        overlay_palette = overlay_series_palette(self._color_settings)
+        self._c_speed.setPen(pg.mkPen(overlay_palette["speed"], width=2))
+        self._c_rpm.setPen(pg.mkPen(overlay_palette["rpm"], width=2))
+        self._c_thr.setPen(
+            pg.mkPen(overlay_palette["throttle"], width=2)
+        )
+        self._c_brk.setPen(pg.mkPen(overlay_palette["brake"], width=2))
 
     def update_from_session(self, session: TelemetrySession) -> None:
         samples = session.samples()
