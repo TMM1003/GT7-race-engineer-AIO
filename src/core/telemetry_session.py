@@ -46,6 +46,17 @@ class CornerSegment:
     strength: float
 
 
+@dataclass(frozen=True)
+class ReplayComparisonState:
+    primary_lap_num: Optional[int]
+    compare_lap_num: Optional[int]
+    compare_color: str
+    compare_frame_index: Optional[int] = None
+    compare_position_x: Optional[float] = None
+    compare_position_y: Optional[float] = None
+    compare_position_z: Optional[float] = None
+
+
 def _dist2d(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     dx = a[0] - b[0]
     dz = a[1] - b[1]
@@ -209,6 +220,7 @@ class TelemetrySession:
 
         self._reference_idx: Optional[int] = None
         self._reference_locked: bool = False
+        self._replay_comparison_state: Optional[ReplayComparisonState] = None
 
         self._last_pos: Optional[Tuple[float, float]] = None
         self._last_moving_t: Optional[float] = None
@@ -257,6 +269,14 @@ class TelemetrySession:
             "lap_num": (ref.lap_num if ref else None),
             "lap_time_ms": (ref.lap_time_ms if ref else None),
         }
+
+    def set_replay_comparison_state(
+        self, state: ReplayComparisonState | None
+    ) -> None:
+        self._replay_comparison_state = state
+
+    def replay_comparison_state(self) -> Optional[ReplayComparisonState]:
+        return self._replay_comparison_state
 
     def set_reference_by_lap_num(self, lap_num: int) -> bool:
         for i, lap in enumerate(self._completed_laps):
@@ -669,6 +689,7 @@ class TelemetrySession:
         self._last_lap_num = None
         self._reference_idx = None
         self._reference_locked = False
+        self._replay_comparison_state = None
 
         self._last_pos = None
         self._last_moving_t = None

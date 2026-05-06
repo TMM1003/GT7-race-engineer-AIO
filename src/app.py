@@ -227,8 +227,17 @@ class AppController(QtCore.QObject):
             self.window.replay_tab.sig_replay_lap_changed.connect(
                 self._on_replay_lap_changed
             )
+            self.window.replay_tab.sig_replay_compare_lap_changed.connect(
+                self._on_replay_compare_lap_changed
+            )
             self.window.replay_tab.sig_replay_speed_changed.connect(
                 self._on_replay_speed_changed
+            )
+            self.window.replay_tab.sig_replay_loop_changed.connect(
+                self._on_replay_loop_changed
+            )
+            self.window.replay_tab.sig_replay_compare_color_changed.connect(
+                self._on_replay_compare_color_changed
             )
             self.window.replay_tab.sig_replay_play.connect(
                 self._on_replay_play
@@ -909,9 +918,18 @@ class AppController(QtCore.QObject):
                 )
             except Exception:
                 rate = 1.0
+            compare_lap = self._default_replay_compare_lap(
+                replay_run, default_lap
+            )
             player.set_speed(rate)
+            player.set_loop_enabled(
+                bool(self.window.replay_tab.chk_replay_loop.isChecked())
+            )
+            player.set_compare_color(
+                self.window.replay_tab.current_replay_compare_color()
+            )
             player.load_lap(
-                default_lap, reference_lap_num=replay_run.reference_lap_num
+                default_lap, reference_lap_num=compare_lap
             )
             self._replay_player = player
 
@@ -919,6 +937,7 @@ class AppController(QtCore.QObject):
                 replay_run.lap_numbers(),
                 reference_lap_num=replay_run.reference_lap_num,
                 selected_lap_num=default_lap,
+                compare_lap_num=compare_lap,
             )
             cur_frame, max_frame = player.progress()
             self.window.replay_tab.set_replay_progress(
@@ -929,7 +948,10 @@ class AppController(QtCore.QObject):
                     "Replay loaded.\n"
                     f"Run: {replay_run.run_dir}\n"
                     f"Lap: {default_lap}\n"
-                    f"Reference: {replay_run.reference_lap_num or '-'}"
+                    f"Compare: {player.reference_lap_num or '-'}\n"
+                    f"Run reference: {replay_run.reference_lap_num or '-'}\n"
+                    "Loop replay: "
+                    f"{'On' if player.loop_replay else 'Off'}"
                 )
             )
         except Exception as e:
@@ -949,9 +971,12 @@ class AppController(QtCore.QObject):
         if self._replay_player is None:
             return
         try:
+            compare_lap_num = (
+                self.window.replay_tab.current_replay_compare_lap_num()
+            )
             self._replay_player.load_lap(
                 int(lap_num),
-                reference_lap_num=self._replay_player.run.reference_lap_num,
+                reference_lap_num=compare_lap_num,
             )
             cur_frame, max_frame = self._replay_player.progress()
             self.window.replay_tab.set_replay_progress(
@@ -960,11 +985,25 @@ class AppController(QtCore.QObject):
             self.window.replay_tab.set_replay_status(
                 (
                     f"Replay lap changed to {lap_num}.\n"
-                    f"Reference: {self._replay_player.reference_lap_num or '-'}"
+                    f"Compare: {self._replay_player.reference_lap_num or '-'}"
                 )
             )
         except Exception as e:
             self.window.replay_tab.set_replay_status(str(e), error=True)
+
+    @QtCore.Slot(int)
+    def _on_replay_compare_lap_changed(self, lap_num: int) -> None:
+        if self._replay_player is None:
+            return
+
+        compare_lap_num = int(lap_num) if int(lap_num) > 0 else None
+        self._replay_player.set_comparison_lap(compare_lap_num)
+        self.window.replay_tab.set_replay_status(
+            (
+                "Replay compare lap set to "
+                f"{self._replay_player.reference_lap_num or '-'}."
+            )
+        )
 
     @QtCore.Slot(float)
     def _on_replay_speed_changed(self, rate: float) -> None:
@@ -975,8 +1014,37 @@ class AppController(QtCore.QObject):
             (
                 f"Replay ready.\n"
                 f"Lap: {self._replay_player.selected_lap_num}\n"
+                f"Compare: {self._replay_player.reference_lap_num or '-'}\n"
                 f"Speed: {float(rate):.2f}x"
             )
+        )
+
+    @QtCore.Slot(bool)
+    def _on_replay_loop_changed(self, enabled: bool) -> None:
+        if self._replay_player is not None:
+            self._replay_player.set_loop_enabled(bool(enabled))
+            lap_num = self._replay_player.selected_lap_num
+        else:
+            lap_num = None
+
+        loop_state = "enabled" if enabled else "disabled"
+        if lap_num is None:
+            self.window.replay_tab.set_replay_status(
+                f"Loop replay {loop_state}."
+            )
+            return
+
+        self.window.replay_tab.set_replay_status(
+            f"Loop replay {loop_state} for lap {lap_num}."
+        )
+
+    @QtCore.Slot(str)
+    def _on_replay_compare_color_changed(self, color: str) -> None:
+        color = str(color or "").strip() or "#ff9f1c"
+        if self._replay_player is not None:
+            self._replay_player.set_compare_color(color)
+        self.window.replay_tab.set_replay_status(
+            f"2nd lap color set to {color}."
         )
 
     @QtCore.Slot()
@@ -985,7 +1053,10 @@ class AppController(QtCore.QObject):
             return
         self._replay_player.play()
         self.window.replay_tab.set_replay_status(
-            f"Playing lap {self._replay_player.selected_lap_num}."
+            (
+                f"Playing lap {self._replay_player.selected_lap_num}"
+                f" against {self._replay_player.reference_lap_num or '-'}."
+            )
         )
 
     @QtCore.Slot()
@@ -994,7 +1065,10 @@ class AppController(QtCore.QObject):
             return
         self._replay_player.pause()
         self.window.replay_tab.set_replay_status(
-            f"Replay paused on lap {self._replay_player.selected_lap_num}."
+            (
+                f"Replay paused on lap {self._replay_player.selected_lap_num}"
+                f" against {self._replay_player.reference_lap_num or '-'}."
+            )
         )
 
     @QtCore.Slot()
@@ -1007,7 +1081,11 @@ class AppController(QtCore.QObject):
             cur_frame, max_frame, playing=False
         )
         self.window.replay_tab.set_replay_status(
-            f"Replay restarted for lap {self._replay_player.selected_lap_num}."
+            (
+                f"Replay restarted for lap "
+                f"{self._replay_player.selected_lap_num}"
+                f" against {self._replay_player.reference_lap_num or '-'}."
+            )
         )
 
     @QtCore.Slot()
@@ -1034,9 +1112,24 @@ class AppController(QtCore.QObject):
         self.window.replay_tab.set_replay_status(
             (
                 f"Replay scrubbed to frame {cur_frame} "
-                f"on lap {self._replay_player.selected_lap_num}."
+                f"on lap {self._replay_player.selected_lap_num}"
+                f" against {self._replay_player.reference_lap_num or '-'}."
             )
         )
+
+    def _default_replay_compare_lap(
+        self, replay_run, primary_lap_num: int
+    ) -> int | None:
+        preferred = replay_run.reference_lap_num
+        if preferred in replay_run.laps and preferred != primary_lap_num:
+            return int(preferred)
+
+        candidates = [
+            int(lap_num)
+            for lap_num in replay_run.lap_numbers()
+            if int(lap_num) != int(primary_lap_num)
+        ]
+        return candidates[-1] if candidates else None
 
     def _refresh_run_meta_ui(self) -> None:
         try:
