@@ -10,6 +10,8 @@ from src.core.telemetry_session import (
     ReplayComparisonState,
     _resample_by_distance,
 )
+from src.track_geometry import align_track_to_lap
+from src.track_geometry.tumftm import canonical_track_key, load_tumftm_track
 
 TIME_PLACEHOLDER = "--.--"
 DELTA_PLACEHOLDER = "—"
@@ -111,6 +113,20 @@ class TrackMapWidget(QtWidgets.QWidget):
         self.plot.setAspectLocked(True)
         self.plot.showGrid(x=True, y=True, alpha=0.2)
 
+        # Optional external track geometry overlay, aligned into GT7 X/Z.
+        self._track_left_edge = self.plot.plot(
+            [], [], pen=pg.mkPen("#7f8c8d", width=1, style=QtCore.Qt.DotLine)
+        )
+        self._track_right_edge = self.plot.plot(
+            [], [], pen=pg.mkPen("#7f8c8d", width=1, style=QtCore.Qt.DotLine)
+        )
+        self._track_centerline = self.plot.plot(
+            [], [], pen=pg.mkPen("#95a5a6", width=1)
+        )
+        self._track_raceline = self.plot.plot(
+            [], [], pen=pg.mkPen("#f39c12", width=2)
+        )
+
         # reference + last lap polylines
         self._ref_line = self.plot.plot([], [], pen=pg.mkPen(width=2))
         self._last_line = self.plot.plot([], [], pen=pg.mkPen(width=2))
@@ -139,7 +155,25 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._last_session_id = None
         self._primary_color = "#2ecc71"
         self._default_compare_color = "#3daee9"
+        self._track_name: str | None = None
+        self._external_track_key: str | None = None
+        self._external_track_geometry = None
+        self._aligned_track = None
+        self._aligned_track_cache_key = None
+        self._external_track_load_failed = False
         self._apply_plot_colors(self._default_compare_color)
+
+    def set_track_name(self, track_name: str | None) -> None:
+        track_name = (track_name or "").strip() or None
+        if track_name == self._track_name:
+            return
+        self._track_name = track_name
+        self._external_track_key = None
+        self._external_track_geometry = None
+        self._aligned_track = None
+        self._aligned_track_cache_key = None
+        self._external_track_load_failed = False
+        self._clear_external_track()
 
     def _hdr(self, text: str) -> QtWidgets.QLabel:
         lbl = QtWidgets.QLabel(text)
@@ -182,10 +216,12 @@ class TrackMapWidget(QtWidgets.QWidget):
         if ref:
             self._set_polyline(self._ref_line, ref.points_xz)
             self._draw_gate_and_sectors(session, ref)
+            self._draw_external_track_geometry(ref)
         else:
             self._set_polyline(self._ref_line, [])
             self._gate_line.setData([], [])
             self._sector_scatter.setData([])
+            self._clear_external_track()
 
         # draw last completed lap
         if last:
@@ -407,6 +443,85 @@ class TrackMapWidget(QtWidgets.QWidget):
             spots.append({"pos": (x, z), "brush": brush})
         self._delta_scatter.setData(spots)
 
+    def _draw_external_track_geometry(self, ref: LapData) -> None:
+        track_key = canonical_track_key(self._track_name)
+        if track_key is None:
+            self._clear_external_track()
+            return
+
+        if (
+            self._external_track_geometry is None
+            or self._external_track_key != track_key
+        ):
+            try:
+                self._external_track_geometry = load_tumftm_track(track_key)
+                self._external_track_key = track_key
+                self._external_track_load_failed = False
+            except Exception:
+                self._external_track_geometry = None
+                self._external_track_key = None
+                self._external_track_load_failed = True
+                self._clear_external_track()
+                return
+
+        lap_len = ref.cum_dist_m[-1] if ref.cum_dist_m else 0.0
+        cache_key = (
+            track_key,
+            ref.lap_num,
+            len(ref.points_xz),
+            round(float(lap_len), 1),
+        )
+        if cache_key != self._aligned_track_cache_key:
+            try:
+                self._aligned_track = align_track_to_lap(
+                    self._external_track_geometry,
+                    ref.points_xz,
+                    n_fit_points=720,
+                    max_shift_bins=None,
+                )
+                self._aligned_track_cache_key = cache_key
+            except Exception:
+                self._aligned_track = None
+                self._aligned_track_cache_key = None
+                self._clear_external_track()
+                return
+
+        aligned = self._aligned_track
+        if aligned is None:
+            self._clear_external_track()
+            return
+
+        self._set_polyline(
+            self._track_left_edge,
+            self._closed_polyline(aligned.boundary_left),
+        )
+        self._set_polyline(
+            self._track_right_edge,
+            self._closed_polyline(aligned.boundary_right),
+        )
+        self._set_polyline(
+            self._track_centerline,
+            self._closed_polyline(aligned.centerline),
+        )
+        self._set_polyline(
+            self._track_raceline,
+            self._closed_polyline(aligned.raceline),
+        )
+
+    def _closed_polyline(
+        self, pts: list[tuple[float, float]] | tuple[tuple[float, float], ...]
+    ) -> list[tuple[float, float]]:
+        out = [(float(x), float(z)) for x, z in pts]
+        if out:
+            out.append(out[0])
+        return out
+
+    def _clear_external_track(self) -> None:
+        self._track_left_edge.setData([], [])
+        self._track_right_edge.setData([], [])
+        self._track_centerline.setData([], [])
+        self._track_raceline.setData([], [])
+
     def _clear(self) -> None:
         self._ref_line.setData([], [])
         self._last_line.setData([], [])
@@ -417,6 +532,7 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._sector_scatter.setData([])
         self._cur_line.setData([], [])
         self._apply_compare_labels(None)
+        self._clear_external_track()
 
         self._ref_s1.setText(TIME_PLACEHOLDER)
         self._ref_s2.setText(TIME_PLACEHOLDER)

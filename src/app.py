@@ -614,6 +614,7 @@ class AppController(QtCore.QObject):
                     or bool(self.research_cfg.export_corner_rows)
                 ),
                 export_corners=bool(self.research_cfg.export_corners),
+                track_name=self._run_meta.get("track_name"),
             )
 
             # Keep run.json aligned with current reference state
@@ -932,6 +933,10 @@ class AppController(QtCore.QObject):
                 default_lap, reference_lap_num=compare_lap
             )
             self._replay_player = player
+            try:
+                self.window.track_map.set_track_name(replay_run.track_name)
+            except Exception:
+                pass
 
             self.window.replay_tab.set_replay_laps(
                 replay_run.lap_numbers(),
@@ -1094,6 +1099,9 @@ class AppController(QtCore.QObject):
             self._replay_player.stop()
         self._replay_player = None
         try:
+            self.window.track_map.set_track_name(
+                self._run_meta.get("track_name")
+            )
             self.window.replay_tab.set_replay_status("Replay closed.")
             self.window.replay_tab.set_replay_progress(0, 0, playing=False)
         except Exception:

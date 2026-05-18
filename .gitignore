@@ -86,6 +86,14 @@ tests/research
 src/research
 scripts/
 
+# Explicit maintained additions inside broadly ignored local folders.
+!scripts/
+scripts/*
+!scripts/align_trackdb_to_gt7.py
+!tests/research/
+tests/research/*
+!tests/research/__init__.py
+
 # Local scratch notes / ad hoc command reminders
 src/research/modeTrain.txt
 Notes_References_ProjectPieces/

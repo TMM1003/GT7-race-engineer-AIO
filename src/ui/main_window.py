@@ -470,6 +470,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.replay_tab, "set_current_run_info"
         ):
             self.replay_tab.set_current_run_info(run_id, run_dir)
+        if hasattr(self, "track_map") and hasattr(
+            self.track_map, "set_track_name"
+        ):
+            self.track_map.set_track_name(track)
 
     def set_reference_info(
         self,

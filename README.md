@@ -25,6 +25,7 @@ The project is developed alongside an academic thesis focused on **corner-level 
 - Full-lap telemetry tensors
 - Lap-to-reference delta-time profiles
 - Algorithmically detected corner segments
+- Optional external track/raceline/boundary baselines from curated `trackdb`
 - Deterministic artifact export at lap finalization
 
 ---
@@ -68,6 +69,75 @@ This dataset is suitable for:
 - supervised regression
 - feature importance analysis
 - comparison between heuristic metrics and learned models
+
+---
+
+## External Track Geometry Baselines
+
+The project includes a curated `trackdb/` subset from
+[`TUMFTM/racetrack-database`](https://github.com/TUMFTM/racetrack-database)
+for GT7-supported real-world circuits. The upstream project is licensed under
+LGPL-3.0; attribution and a local copy of the upstream license are kept in
+`trackdb/ATTRIBUTION.md` and `trackdb/LICENSE`.
+
+Each retained track provides:
+
+- `tracks/<Track>.csv`: centerline plus left/right track widths
+- `racelines/<Track>.csv`: optimized minimum-curvature raceline
+- optional raceline and curvature reference plots
+
+When the current run metadata maps to a retained `trackdb` circuit, the app
+fits the external raceline into GT7 `(X, Z)` coordinates using the current
+reference lap. The same transform is applied to the centerline and track
+widths, enabling GT7-space boundary and raceline comparisons.
+
+Currently retained mappings include:
+
+- Brands Hatch
+- Circuit de Barcelona-Catalunya
+- Circuit Gilles-Villeneuve / Montreal
+- Autodromo Nazionale Monza
+- Nurburgring GP
+- Autodromo de Interlagos / Sao Paulo
+- Circuit de Spa-Francorchamps
+- Red Bull Ring / Spielberg
+- Suzuka Circuit
+- Yas Marina Circuit
+
+Known incompatible layout variants are intentionally not mapped to full-course
+geometry, such as Nordschleife, Monza No Chicane, Suzuka East, Red Bull Ring
+Short, and Brands Hatch Indy.
+
+### Exported Baseline Metrics
+
+Future lap exports include resampled GT7 path geometry:
+
+- `laps/lap_####.json` -> `geometry.points_xz`
+- `laps/lap_####.npz` -> `points_xz` and `distance_axis_m`
+
+When external geometry is available, baseline JSON files include an
+`external_track` block with:
+
+- alignment transform and fit error statistics
+- raceline error
+- lateral offset from centerline
+- left/right track margin
+- off-track bin counts
+- a `track_alignment_<Track>.json` artifact containing the aligned track
+  geometry in GT7 coordinates
+
+Old run artifacts created before this feature do not contain `geometry.points_xz`,
+so offline alignment requires newly exported laps.
+
+### Offline Alignment QA
+
+Use the helper script to validate local `trackdb` files or write an alignment
+artifact/plot for a run:
+
+```bash
+python scripts/align_trackdb_to_gt7.py --cache-only --track "Circuit de Spa-Francorchamps"
+python scripts/align_trackdb_to_gt7.py --run-dir data/runs/<RUN_ID> --track "Circuit de Spa-Francorchamps" --plot
+```
 
 ---
 
@@ -148,6 +218,7 @@ src/
 ├── core/            # Session state, buffers, lap logic
 ├── telemetry/       # GT7 UDP communication
 ├── ui/              # Qt-based UI components
+├── track_geometry/  # External track alignment and boundary metrics
 ├── research/        # Dataset, schema, baselines, metrics
 │   ├── dataset.py
 │   ├── baselines.py
@@ -157,6 +228,9 @@ src/
 ├── app.py           # Application entry point
 scripts/
 ├── build_dataset.py # Offline dataset reconstruction
+├── align_trackdb_to_gt7.py # External geometry alignment QA
+trackdb/
+└── tracks/, racelines/ # Curated TUMFTM GT7-compatible geometry
 data/
 └── runs/            # Recorded telemetry runs
 ```
@@ -187,6 +261,7 @@ More complex sequence-based or unsupervised approaches may be explored in later 
 - Telemetry data is sourced from a closed commercial simulator (GT7)
 - Track and vehicle conditions are controlled but simulator-specific
 - Corner definitions are geometry-based and may not align with official corner naming
+- External track geometry is real-world/OSM-derived and aligned to GT7 by a fitted transform; it is useful as a baseline, not absolute GT7 ground truth
 - Results are most directly applicable to comparative driving analysis rather than absolute lap time prediction
 
 These limitations are explicitly acknowledged in the associated research work.
@@ -217,3 +292,8 @@ pip install -r requirements.txt
 
 This project is currently intended for academic and research use.  
 Licensing will be finalized following thesis submission.
+
+The bundled `trackdb/` data is derived from
+[`TUMFTM/racetrack-database`](https://github.com/TUMFTM/racetrack-database)
+and remains subject to its upstream LGPL-3.0 license. See
+`trackdb/ATTRIBUTION.md` and `trackdb/LICENSE`.

@@ -6,8 +6,18 @@ import json
 import time
 from typing import Any, Dict, Optional, Tuple, List
 
-from src.core.telemetry_session import LapData, TelemetrySession
+from src.core.telemetry_session import (
+    LapData,
+    TelemetrySession,
+    _resample_by_distance,
+)
 from .schema import FeatureSpec, build_lap_tensor
+from src.track_geometry import (
+    align_track_to_lap,
+    aligned_track_to_payload,
+    lap_track_metrics,
+)
+from src.track_geometry.tumftm import canonical_track_key, load_tumftm_track
 
 try:
     import numpy as _np  # optional
@@ -149,6 +159,9 @@ def _lap_baselines(
     last: LapData,
     ref: Optional[LapData],
     n: int,
+    *,
+    run_dir: Optional[Path] = None,
+    track_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Export deterministic baselines:
@@ -160,6 +173,16 @@ def _lap_baselines(
         "reference_lap_num": (ref.lap_num if ref else None),
         "n": n,
     }
+
+    external = _external_track_baseline(
+        run_dir=run_dir,
+        track_name=track_name,
+        lap=last,
+        ref=ref,
+        n=n,
+    )
+    if external is not None:
+        out["external_track"] = external
 
     if not ref or ref.lap_num == last.lap_num:
         return out
@@ -208,6 +231,77 @@ def _lap_baselines(
     return out
 
 
+def _external_track_baseline(
+    *,
+    run_dir: Optional[Path],
+    track_name: Optional[str],
+    lap: LapData,
+    ref: Optional[LapData],
+    n: int,
+) -> Optional[Dict[str, Any]]:
+    if ref is None:
+        return None
+    key = canonical_track_key(track_name)
+    if key is None:
+        return None
+    if not ref.points_xz or len(ref.points_xz) < 10:
+        return None
+    if not lap.points_xz or len(lap.points_xz) < 10:
+        return None
+
+    try:
+        track = load_tumftm_track(key)
+        aligned = align_track_to_lap(track, ref.points_xz, n_fit_points=720)
+        metrics = lap_track_metrics(lap.points_xz, aligned, n=n)
+    except Exception as e:
+        return {
+            "available": False,
+            "track_key": key,
+            "reason": f"{type(e).__name__}: {e}",
+        }
+
+    alignment_rel = None
+    if run_dir is not None:
+        try:
+            alignment_path = run_dir / f"track_alignment_{key}.json"
+            payload = aligned_track_to_payload(aligned, n=720)
+            payload["gt7_reference"] = {
+                "track_name": track_name,
+                "reference_lap_num": int(ref.lap_num),
+                "reference_lap_distance_m": float(
+                    ref.cum_dist_m[-1] if ref.cum_dist_m else 0.0
+                ),
+            }
+            _safe_write_json(alignment_path, payload)
+            alignment_rel = alignment_path.name
+        except Exception:
+            alignment_rel = None
+
+    return {
+        "available": True,
+        "track_key": key,
+        "source": track.source,
+        "alignment_path": alignment_rel,
+        "reference_lap_num": int(ref.lap_num),
+        "transform": {
+            "matrix": aligned.transform.matrix,
+            "scale": float(aligned.transform.scale),
+            "translation": [
+                float(aligned.transform.translation[0]),
+                float(aligned.transform.translation[1]),
+            ],
+            "reflected": bool(aligned.transform.reflected),
+            "reversed": bool(aligned.transform.reversed),
+            "shift_bins": int(aligned.transform.shift_bins),
+            "rmse_m": float(aligned.transform.rmse_m),
+            "mean_error_m": float(aligned.transform.mean_error_m),
+            "p95_error_m": float(aligned.transform.p95_error_m),
+            "max_error_m": float(aligned.transform.max_error_m),
+        },
+        "lap_metrics": metrics,
+    }
+
+
 def export_lap_bundle(
     run_dir: Path,
     session: TelemetrySession,
@@ -218,6 +312,7 @@ def export_lap_bundle(
     export_json_always: bool = True,
     export_baselines: bool = True,
     export_corners: bool = True,
+    track_name: Optional[str] = None,
 ) -> Tuple[Path, Optional[Path], Optional[Path]]:
     """
     Exports a single lap as:
@@ -247,14 +342,47 @@ def export_lap_bundle(
     npz_path: Optional[Path] = None
     baseline_path: Optional[Path] = None
 
+    points_xz_resampled = (
+        _resample_by_distance(lap.points_xz, lap.cum_dist_m, n=n)
+        if getattr(lap, "points_xz", None)
+        and getattr(lap, "cum_dist_m", None)
+        else []
+    )
+    distance_axis_m = (
+        [
+            float(meta["lap_distance_m"]) * (i / max(1, n - 1))
+            for i in range(n)
+        ]
+        if meta.get("ok") and n > 0
+        else []
+    )
+    geometry_payload = {
+        "source": "gt7_telemetry_resampled",
+        "points_xz": [
+            [float(x), float(z)] for x, z in points_xz_resampled
+        ],
+        "distance_axis_m": distance_axis_m,
+    }
+
     if export_json_always:
-        _safe_write_json(json_path, {"X": X, "meta": meta})
+        _safe_write_json(
+            json_path,
+            {"X": X, "meta": meta, "geometry": geometry_payload},
+        )
 
     if export_npz_if_available and _np is not None:
         npz_path = laps_dir / f"lap_{lap.lap_num:04d}.npz"
         arr = _np.array(X, dtype=_np.float32)
         meta_str = json.dumps(meta, sort_keys=True)
-        _np.savez_compressed(npz_path, X=arr, meta_json=meta_str)
+        points_arr = _np.array(points_xz_resampled, dtype=_np.float32)
+        dist_arr = _np.array(distance_axis_m, dtype=_np.float32)
+        _np.savez_compressed(
+            npz_path,
+            X=arr,
+            meta_json=meta_str,
+            points_xz=points_arr,
+            distance_axis_m=dist_arr,
+        )
 
     # Manifest: lap artifacts
     _update_manifest(
@@ -278,7 +406,14 @@ def export_lap_bundle(
     baseline = None
     if export_baselines:
         ref = session.reference_lap()
-        baseline = _lap_baselines(session, lap, ref, n=n)
+        baseline = _lap_baselines(
+            session,
+            lap,
+            ref,
+            n=n,
+            run_dir=run_dir,
+            track_name=track_name,
+        )
         baseline_path = base_dir / f"lap_{lap.lap_num:04d}_vs_ref.json"
         _safe_write_json(baseline_path, baseline)
 
