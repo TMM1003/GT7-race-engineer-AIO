@@ -91,6 +91,10 @@ fits the external raceline into GT7 `(X, Z)` coordinates using the current
 reference lap. The same transform is applied to the centerline and track
 widths, enabling GT7-space boundary and raceline comparisons.
 
+The Track Map view also shows a **TrackDB Baseline** panel with fit RMSE,
+raceline error, left/right margin, and off-track bin counts for the latest
+completed lap.
+
 Currently retained mappings include:
 
 - Brands Hatch

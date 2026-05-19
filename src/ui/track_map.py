@@ -10,10 +10,11 @@ from src.core.telemetry_session import (
     ReplayComparisonState,
     _resample_by_distance,
 )
-from src.track_geometry import align_track_to_lap
+from src.track_geometry import align_track_to_lap, lap_track_metrics
 from src.track_geometry.tumftm import canonical_track_key, load_tumftm_track
 
 TIME_PLACEHOLDER = "--.--"
+METRIC_PLACEHOLDER = "--"
 DELTA_PLACEHOLDER = "—"
 
 
@@ -35,6 +36,43 @@ def _delta_ms_color_style(delta_ms: float | None) -> str:
     if delta_ms is None:
         return ""
     return "color: #27ae60;" if delta_ms <= 0 else "color: #c0392b;"
+
+
+def _metric_m_str(value: float | None) -> str:
+    if value is None:
+        return METRIC_PLACEHOLDER
+    try:
+        return f"{float(value):0.2f} m"
+    except (TypeError, ValueError):
+        return METRIC_PLACEHOLDER
+
+
+def _offtrack_str(count: int | None, n: int) -> str:
+    if count is None:
+        return METRIC_PLACEHOLDER
+    return f"{int(count)} / {int(n)}"
+
+
+def _metric_base_style() -> str:
+    return "font-family: Consolas, monospace; font-weight: 700;"
+
+
+def _margin_style(value: float | None) -> str:
+    base = _metric_base_style()
+    if value is None:
+        return base
+    return base + (
+        " color: #c0392b;" if float(value) < 0.0 else " color: #27ae60;"
+    )
+
+
+def _offtrack_style(count: int | None) -> str:
+    base = _metric_base_style()
+    if count is None:
+        return base
+    return base + (
+        " color: #c0392b;" if int(count) > 0 else " color: #27ae60;"
+    )
 
 
 def _delta_at_fraction(
@@ -106,6 +144,47 @@ class TrackMapWidget(QtWidgets.QWidget):
 
         layout.addWidget(self._sector_panel)
 
+        self._external_panel = QtWidgets.QGroupBox("TrackDB Baseline")
+        ext_grid = QtWidgets.QGridLayout(self._external_panel)
+
+        self._trackdb_status = QtWidgets.QLabel("Set track metadata")
+        self._trackdb_status.setWordWrap(True)
+        ext_grid.addWidget(self._trackdb_status, 0, 0, 1, 4)
+
+        ext_grid.addWidget(self._hdr("Lap"), 1, 0)
+        ext_grid.addWidget(self._hdr("Fit RMSE"), 1, 1)
+        ext_grid.addWidget(self._hdr("Line err"), 1, 2)
+        ext_grid.addWidget(self._hdr("Off"), 1, 3)
+
+        self._trackdb_lap = self._cell(METRIC_PLACEHOLDER, bold=True)
+        self._trackdb_fit_rmse = self._cell(METRIC_PLACEHOLDER, bold=True)
+        self._trackdb_race_mean = self._cell(METRIC_PLACEHOLDER, bold=True)
+        self._trackdb_off_bins = self._cell(METRIC_PLACEHOLDER, bold=True)
+        ext_grid.addWidget(self._trackdb_lap, 2, 0)
+        ext_grid.addWidget(self._trackdb_fit_rmse, 2, 1)
+        ext_grid.addWidget(self._trackdb_race_mean, 2, 2)
+        ext_grid.addWidget(self._trackdb_off_bins, 2, 3)
+
+        ext_grid.addWidget(self._hdr("P95 err"), 3, 0)
+        ext_grid.addWidget(self._hdr("Min L"), 3, 1)
+        ext_grid.addWidget(self._hdr("Min R"), 3, 2)
+        ext_grid.addWidget(self._hdr("Track"), 3, 3)
+
+        self._trackdb_race_p95 = self._cell(METRIC_PLACEHOLDER, bold=True)
+        self._trackdb_margin_left = self._cell(
+            METRIC_PLACEHOLDER, bold=True
+        )
+        self._trackdb_margin_right = self._cell(
+            METRIC_PLACEHOLDER, bold=True
+        )
+        self._trackdb_track_key = self._cell(METRIC_PLACEHOLDER, bold=True)
+        ext_grid.addWidget(self._trackdb_race_p95, 4, 0)
+        ext_grid.addWidget(self._trackdb_margin_left, 4, 1)
+        ext_grid.addWidget(self._trackdb_margin_right, 4, 2)
+        ext_grid.addWidget(self._trackdb_track_key, 4, 3)
+
+        layout.addWidget(self._external_panel)
+
         # Plot
         self.plot = pg.PlotWidget(
             title="Track Map (X vs Z) — last vs reference"
@@ -174,6 +253,8 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._aligned_track_cache_key = None
         self._external_track_load_failed = False
         self._clear_external_track()
+        self._reset_external_metric_values()
+        self._trackdb_status.setText("Set track metadata")
 
     def _hdr(self, text: str) -> QtWidgets.QLabel:
         lbl = QtWidgets.QLabel(text)
@@ -246,6 +327,7 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._update_compare_dot(replay_compare)
         # sector panel values
         self._update_sector_panel(session, last, ref, n=n)
+        self._update_external_metrics(last, ref, n=n)
 
     # Sector panel logic
 
@@ -508,6 +590,69 @@ class TrackMapWidget(QtWidgets.QWidget):
             self._closed_polyline(aligned.raceline),
         )
 
+    def _update_external_metrics(
+        self, last: LapData | None, ref: LapData | None, n: int
+    ) -> None:
+        self._reset_external_metric_values()
+
+        track_key = canonical_track_key(self._track_name)
+        if track_key is None:
+            if self._track_name:
+                self._trackdb_status.setText(
+                    f"No compatible trackdb mapping for {self._track_name}."
+                )
+            else:
+                self._trackdb_status.setText("Set track metadata")
+            return
+
+        self._trackdb_track_key.setText(track_key)
+        if ref is None:
+            self._trackdb_status.setText(
+                f"{track_key}: waiting for reference lap"
+            )
+            return
+
+        aligned = self._aligned_track
+        if aligned is None:
+            self._trackdb_status.setText(f"{track_key}: alignment unavailable")
+            return
+
+        target = last or ref
+        if target is None or not target.points_xz:
+            self._trackdb_status.setText(f"{track_key}: waiting for lap geometry")
+            return
+
+        try:
+            metrics = lap_track_metrics(target.points_xz, aligned, n=n)
+        except Exception as exc:
+            self._trackdb_status.setText(
+                f"{track_key}: metric error ({type(exc).__name__})"
+            )
+            return
+
+        label = "Ref" if target.lap_num == ref.lap_num else f"L{target.lap_num}"
+        fit = float(aligned.transform.rmse_m)
+        race_mean = float(metrics.get("raceline_error_mean_m", 0.0))
+        race_p95 = float(metrics.get("raceline_error_p95_m", 0.0))
+        min_left = float(metrics.get("min_left_margin_m", 0.0))
+        min_right = float(metrics.get("min_right_margin_m", 0.0))
+        off_bins = int(metrics.get("off_track_bins", 0))
+
+        self._trackdb_lap.setText(label)
+        self._trackdb_fit_rmse.setText(_metric_m_str(fit))
+        self._trackdb_race_mean.setText(_metric_m_str(race_mean))
+        self._trackdb_race_p95.setText(_metric_m_str(race_p95))
+        self._trackdb_margin_left.setText(_metric_m_str(min_left))
+        self._trackdb_margin_right.setText(_metric_m_str(min_right))
+        self._trackdb_off_bins.setText(_offtrack_str(off_bins, n))
+
+        self._trackdb_margin_left.setStyleSheet(_margin_style(min_left))
+        self._trackdb_margin_right.setStyleSheet(_margin_style(min_right))
+        self._trackdb_off_bins.setStyleSheet(_offtrack_style(off_bins))
+        self._trackdb_status.setText(
+            f"{track_key}: external raceline and boundary metrics"
+        )
+
     def _closed_polyline(
         self, pts: list[tuple[float, float]] | tuple[tuple[float, float], ...]
     ) -> list[tuple[float, float]]:
@@ -522,6 +667,20 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._track_centerline.setData([], [])
         self._track_raceline.setData([], [])
 
+    def _reset_external_metric_values(self) -> None:
+        self._trackdb_lap.setText(METRIC_PLACEHOLDER)
+        self._trackdb_fit_rmse.setText(METRIC_PLACEHOLDER)
+        self._trackdb_race_mean.setText(METRIC_PLACEHOLDER)
+        self._trackdb_race_p95.setText(METRIC_PLACEHOLDER)
+        self._trackdb_margin_left.setText(METRIC_PLACEHOLDER)
+        self._trackdb_margin_right.setText(METRIC_PLACEHOLDER)
+        self._trackdb_off_bins.setText(METRIC_PLACEHOLDER)
+        self._trackdb_track_key.setText(METRIC_PLACEHOLDER)
+        base_style = _metric_base_style()
+        self._trackdb_margin_left.setStyleSheet(base_style)
+        self._trackdb_margin_right.setStyleSheet(base_style)
+        self._trackdb_off_bins.setStyleSheet(base_style)
+
     def _clear(self) -> None:
         self._ref_line.setData([], [])
         self._last_line.setData([], [])
@@ -533,6 +692,8 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._cur_line.setData([], [])
         self._apply_compare_labels(None)
         self._clear_external_track()
+        self._reset_external_metric_values()
+        self._trackdb_status.setText("Set track metadata")
 
         self._ref_s1.setText(TIME_PLACEHOLDER)
         self._ref_s2.setText(TIME_PLACEHOLDER)
