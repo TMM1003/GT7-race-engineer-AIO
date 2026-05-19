@@ -93,7 +93,11 @@ widths, enabling GT7-space boundary and raceline comparisons.
 
 The Track Map view also shows a **TrackDB Baseline** panel with fit RMSE,
 raceline error, left/right margin, and off-track bin counts for the latest
-completed lap.
+completed lap. The same panel controls TrackDB overlay visibility for the
+raceline, boundaries, and centerline, plus trace color modes for TrackDB line
+error, margin, off-track state, and time delta. Replay mode exposes the same
+TrackDB baseline controls in the Replay tab so recorded laps can be reviewed
+against the external reference without leaving the replay menu.
 
 Currently retained mappings include:
 

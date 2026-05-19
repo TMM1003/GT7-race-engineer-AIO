@@ -19,6 +19,7 @@ class ReplayTab(QtWidgets.QWidget):
     sig_replay_loop_changed = QtCore.Signal(bool)
     sig_replay_compare_color_changed = QtCore.Signal(str)
     sig_graph_colors_changed = QtCore.Signal(dict)
+    sig_trackdb_overlay_changed = QtCore.Signal(dict)
     sig_replay_play = QtCore.Signal()
     sig_replay_pause = QtCore.Signal()
     sig_replay_restart = QtCore.Signal()
@@ -200,6 +201,71 @@ class ReplayTab(QtWidgets.QWidget):
 
         layout.addWidget(playback_box)
 
+        trackdb_box = QtWidgets.QGroupBox("TrackDB Baseline")
+        trackdb_layout = QtWidgets.QVBoxLayout(trackdb_box)
+        trackdb_layout.setContentsMargins(12, 12, 12, 12)
+        trackdb_layout.setSpacing(10)
+
+        self.chk_replay_trackdb_enabled = QtWidgets.QCheckBox(
+            "Use TrackDB on Track Map"
+        )
+        self.chk_replay_trackdb_enabled.setChecked(True)
+        self.chk_replay_trackdb_enabled.toggled.connect(
+            self._emit_trackdb_overlay_changed
+        )
+        trackdb_layout.addWidget(self.chk_replay_trackdb_enabled)
+
+        overlay_row = QtWidgets.QHBoxLayout()
+        self.chk_replay_trackdb_raceline = QtWidgets.QCheckBox("Raceline")
+        self.chk_replay_trackdb_raceline.setChecked(True)
+        self.chk_replay_trackdb_raceline.toggled.connect(
+            self._emit_trackdb_overlay_changed
+        )
+        self.chk_replay_trackdb_boundaries = QtWidgets.QCheckBox(
+            "Boundaries"
+        )
+        self.chk_replay_trackdb_boundaries.setChecked(True)
+        self.chk_replay_trackdb_boundaries.toggled.connect(
+            self._emit_trackdb_overlay_changed
+        )
+        self.chk_replay_trackdb_centerline = QtWidgets.QCheckBox(
+            "Centerline"
+        )
+        self.chk_replay_trackdb_centerline.setChecked(False)
+        self.chk_replay_trackdb_centerline.toggled.connect(
+            self._emit_trackdb_overlay_changed
+        )
+        overlay_row.addWidget(self.chk_replay_trackdb_raceline)
+        overlay_row.addWidget(self.chk_replay_trackdb_boundaries)
+        overlay_row.addWidget(self.chk_replay_trackdb_centerline)
+        overlay_row.addStretch(1)
+        trackdb_layout.addLayout(overlay_row)
+
+        trace_form = QtWidgets.QFormLayout()
+        trace_form.setFieldGrowthPolicy(
+            QtWidgets.QFormLayout.AllNonFixedFieldsGrow
+        )
+        trace_form.setRowWrapPolicy(QtWidgets.QFormLayout.WrapLongRows)
+        self.combo_replay_trackdb_trace = QtWidgets.QComboBox()
+        self.combo_replay_trackdb_trace.addItem(
+            "TrackDB line error", "trackdb_line_error"
+        )
+        self.combo_replay_trackdb_trace.addItem(
+            "TrackDB margin", "trackdb_margin"
+        )
+        self.combo_replay_trackdb_trace.addItem(
+            "Off-track", "trackdb_off_track"
+        )
+        self.combo_replay_trackdb_trace.addItem("Time delta", "time_delta")
+        self.combo_replay_trackdb_trace.addItem("Off", "off")
+        self.combo_replay_trackdb_trace.currentIndexChanged.connect(
+            self._emit_trackdb_overlay_changed
+        )
+        trace_form.addRow("Trace color", self.combo_replay_trackdb_trace)
+        trackdb_layout.addLayout(trace_form)
+
+        layout.addWidget(trackdb_box)
+
         colors_box = QtWidgets.QGroupBox("Visual Colors")
         colors_layout = QtWidgets.QVBoxLayout(colors_box)
         colors_layout.setContentsMargins(12, 12, 12, 12)
@@ -272,6 +338,7 @@ class ReplayTab(QtWidgets.QWidget):
         layout.addStretch(1)
 
         self.set_graph_color_settings(self._graph_color_settings)
+        self._update_trackdb_controls_enabled()
 
     def set_current_run_info(
         self,
@@ -373,6 +440,18 @@ class ReplayTab(QtWidgets.QWidget):
     def current_replay_compare_color(self) -> str:
         return self._replay_compare_color
 
+    def current_trackdb_overlay_settings(self) -> dict[str, object]:
+        return {
+            "enabled": self.chk_replay_trackdb_enabled.isChecked(),
+            "raceline": self.chk_replay_trackdb_raceline.isChecked(),
+            "boundaries": self.chk_replay_trackdb_boundaries.isChecked(),
+            "centerline": self.chk_replay_trackdb_centerline.isChecked(),
+            "color_mode": str(
+                self.combo_replay_trackdb_trace.currentData()
+                or "trackdb_line_error"
+            ),
+        }
+
     def set_replay_progress(
         self,
         current_frame: int,
@@ -438,6 +517,12 @@ class ReplayTab(QtWidgets.QWidget):
 
     def _emit_replay_loop_changed(self, checked: bool) -> None:
         self.sig_replay_loop_changed.emit(bool(checked))
+
+    def _emit_trackdb_overlay_changed(self, *args) -> None:
+        self._update_trackdb_controls_enabled()
+        self.sig_trackdb_overlay_changed.emit(
+            self.current_trackdb_overlay_settings()
+        )
 
     def _emit_replay_seek(self) -> None:
         self.sig_replay_seek.emit(int(self.slider_replay.value()))
@@ -520,6 +605,13 @@ class ReplayTab(QtWidgets.QWidget):
 
     def _apply_replay_compare_color_preview(self) -> None:
         self._apply_color_preview("compare")
+
+    def _update_trackdb_controls_enabled(self) -> None:
+        enabled = self.chk_replay_trackdb_enabled.isChecked()
+        self.chk_replay_trackdb_raceline.setEnabled(enabled)
+        self.chk_replay_trackdb_boundaries.setEnabled(enabled)
+        self.chk_replay_trackdb_centerline.setEnabled(enabled)
+        self.combo_replay_trackdb_trace.setEnabled(enabled)
 
     def _apply_color_preview(self, key: str) -> None:
         preview = self._color_previews.get(key)

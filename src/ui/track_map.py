@@ -75,6 +75,29 @@ def _offtrack_style(count: int | None) -> str:
     )
 
 
+def _line_error_brush(value: float) -> pg.QtGui.QBrush:
+    ratio = max(0.0, min(1.0, (float(value) - 0.75) / 4.25))
+    red = int(39 + (192 * ratio))
+    green = int(174 * (1.0 - ratio) + 57 * ratio)
+    blue = int(96 * (1.0 - ratio) + 43 * ratio)
+    return pg.mkBrush(red, green, blue, 220)
+
+
+def _margin_brush(value: float) -> pg.QtGui.QBrush:
+    margin = float(value)
+    if margin < 0.0:
+        return pg.mkBrush(192, 57, 43, 230)
+    if margin < 1.0:
+        return pg.mkBrush(243, 156, 18, 220)
+    return pg.mkBrush(39, 174, 96, 190)
+
+
+def _offtrack_brush(on_track: bool) -> pg.QtGui.QBrush:
+    if on_track:
+        return pg.mkBrush(39, 174, 96, 110)
+    return pg.mkBrush(192, 57, 43, 235)
+
+
 def _delta_at_fraction(
     delta_ms_profile: list[float], frac: float
 ) -> float | None:
@@ -183,6 +206,36 @@ class TrackMapWidget(QtWidgets.QWidget):
         ext_grid.addWidget(self._trackdb_margin_right, 4, 2)
         ext_grid.addWidget(self._trackdb_track_key, 4, 3)
 
+        self._chk_trackdb_enabled = QtWidgets.QCheckBox("Use TrackDB")
+        self._chk_trackdb_enabled.setChecked(True)
+        ext_grid.addWidget(self._hdr("Baseline"), 5, 0)
+        ext_grid.addWidget(self._chk_trackdb_enabled, 5, 1, 1, 3)
+
+        ext_grid.addWidget(self._hdr("Overlay"), 6, 0)
+        overlay_row = QtWidgets.QHBoxLayout()
+        self._chk_trackdb_raceline = QtWidgets.QCheckBox("Raceline")
+        self._chk_trackdb_raceline.setChecked(True)
+        self._chk_trackdb_boundaries = QtWidgets.QCheckBox("Boundaries")
+        self._chk_trackdb_boundaries.setChecked(True)
+        self._chk_trackdb_centerline = QtWidgets.QCheckBox("Centerline")
+        self._chk_trackdb_centerline.setChecked(False)
+        overlay_row.addWidget(self._chk_trackdb_raceline)
+        overlay_row.addWidget(self._chk_trackdb_boundaries)
+        overlay_row.addWidget(self._chk_trackdb_centerline)
+        overlay_row.addStretch(1)
+        ext_grid.addLayout(overlay_row, 6, 1, 1, 3)
+
+        self._trackdb_color_mode = QtWidgets.QComboBox()
+        self._trackdb_color_mode.addItem(
+            "TrackDB line error", "trackdb_line_error"
+        )
+        self._trackdb_color_mode.addItem("TrackDB margin", "trackdb_margin")
+        self._trackdb_color_mode.addItem("Off-track", "trackdb_off_track")
+        self._trackdb_color_mode.addItem("Time delta", "time_delta")
+        self._trackdb_color_mode.addItem("Off", "off")
+        ext_grid.addWidget(self._hdr("Trace color"), 7, 0)
+        ext_grid.addWidget(self._trackdb_color_mode, 7, 1, 1, 3)
+
         layout.addWidget(self._external_panel)
 
         # Plot
@@ -205,6 +258,10 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._track_raceline = self.plot.plot(
             [], [], pen=pg.mkPen("#f39c12", width=2)
         )
+        self._track_left_edge.setZValue(-30)
+        self._track_right_edge.setZValue(-30)
+        self._track_centerline.setZValue(-25)
+        self._track_raceline.setZValue(-20)
 
         # reference + last lap polylines
         self._ref_line = self.plot.plot([], [], pen=pg.mkPen(width=2))
@@ -214,8 +271,9 @@ class TrackMapWidget(QtWidgets.QWidget):
             [], [], pen=pg.mkPen(width=2, style=QtCore.Qt.DashLine)
         )
 
-        # delta overlay (scatter along last lap)
+        # Analysis overlay (time delta or TrackDB-derived color modes).
         self._delta_scatter = pg.ScatterPlotItem(size=6)
+        self._delta_scatter.setZValue(10)
         self.plot.addItem(self._delta_scatter)
 
         # current car position
@@ -240,6 +298,10 @@ class TrackMapWidget(QtWidgets.QWidget):
         self._aligned_track = None
         self._aligned_track_cache_key = None
         self._external_track_load_failed = False
+        self._latest_session: TelemetrySession | None = None
+        self._latest_n = 300
+        self._connect_trackdb_overlay_controls()
+        self._apply_external_overlay_visibility()
         self._apply_plot_colors(self._default_compare_color)
 
     def set_track_name(self, track_name: str | None) -> None:
@@ -270,9 +332,96 @@ class TrackMapWidget(QtWidgets.QWidget):
         )
         return lbl
 
+    def set_trackdb_overlay_options(self, settings: dict) -> None:
+        if not isinstance(settings, dict):
+            return
+
+        controls = [
+            self._chk_trackdb_enabled,
+            self._chk_trackdb_raceline,
+            self._chk_trackdb_boundaries,
+            self._chk_trackdb_centerline,
+            self._trackdb_color_mode,
+        ]
+        for control in controls:
+            control.blockSignals(True)
+        try:
+            if "enabled" in settings:
+                self._chk_trackdb_enabled.setChecked(
+                    bool(settings["enabled"])
+                )
+            if "raceline" in settings:
+                self._chk_trackdb_raceline.setChecked(
+                    bool(settings["raceline"])
+                )
+            if "boundaries" in settings:
+                self._chk_trackdb_boundaries.setChecked(
+                    bool(settings["boundaries"])
+                )
+            if "centerline" in settings:
+                self._chk_trackdb_centerline.setChecked(
+                    bool(settings["centerline"])
+                )
+
+            mode = settings.get("color_mode")
+            if mode is not None:
+                idx = self._trackdb_color_mode.findData(str(mode))
+                if idx >= 0:
+                    self._trackdb_color_mode.setCurrentIndex(idx)
+        finally:
+            for control in controls:
+                control.blockSignals(False)
+
+        self._on_trackdb_overlay_controls_changed()
+
+    def _connect_trackdb_overlay_controls(self) -> None:
+        self._chk_trackdb_enabled.toggled.connect(
+            self._on_trackdb_overlay_controls_changed
+        )
+        self._chk_trackdb_raceline.toggled.connect(
+            self._on_trackdb_overlay_controls_changed
+        )
+        self._chk_trackdb_boundaries.toggled.connect(
+            self._on_trackdb_overlay_controls_changed
+        )
+        self._chk_trackdb_centerline.toggled.connect(
+            self._on_trackdb_overlay_controls_changed
+        )
+        self._trackdb_color_mode.currentIndexChanged.connect(
+            self._on_trackdb_overlay_controls_changed
+        )
+
+    def _on_trackdb_overlay_controls_changed(self, *args) -> None:
+        self._apply_external_overlay_visibility()
+        if self._latest_session is not None:
+            self.update_from_session(self._latest_session, n=self._latest_n)
+
+    def _trackdb_color_mode_key(self) -> str:
+        mode = self._trackdb_color_mode.currentData()
+        return str(mode or "trackdb_line_error")
+
+    def _apply_external_overlay_visibility(self) -> None:
+        enabled = self._chk_trackdb_enabled.isChecked()
+        self._chk_trackdb_raceline.setEnabled(enabled)
+        self._chk_trackdb_boundaries.setEnabled(enabled)
+        self._chk_trackdb_centerline.setEnabled(enabled)
+        self._trackdb_color_mode.setEnabled(enabled)
+        self._track_raceline.setVisible(
+            enabled and self._chk_trackdb_raceline.isChecked()
+        )
+        show_boundaries = self._chk_trackdb_boundaries.isChecked()
+        self._track_left_edge.setVisible(enabled and show_boundaries)
+        self._track_right_edge.setVisible(enabled and show_boundaries)
+        self._track_centerline.setVisible(
+            enabled and self._chk_trackdb_centerline.isChecked()
+        )
+
     def update_from_session(
         self, session: TelemetrySession, n: int = 300
     ) -> None:
+        self._latest_session = session
+        self._latest_n = int(n)
+
         # session reset handling for visuals
         if self._last_session_id is None:
             self._last_session_id = session.session_id()
@@ -310,8 +459,8 @@ class TrackMapWidget(QtWidgets.QWidget):
         else:
             self._set_polyline(self._last_line, [])
 
-        # delta overlay (time delta along distance-aligned resample)
-        self._draw_delta(session, last, ref)
+        # Analysis overlay (time delta or TrackDB-derived color mode)
+        self._draw_analysis_overlay(session, last, ref, n=n)
 
         # current car dot from current lap points (not completed)
         cur_pts = session.current_lap_points()
@@ -487,6 +636,80 @@ class TrackMapWidget(QtWidgets.QWidget):
         z = pts[j][1] + a * (pts[j + 1][1] - pts[j][1])
         return (x, z)
 
+    def _draw_analysis_overlay(
+        self,
+        session: TelemetrySession,
+        last: LapData | None,
+        ref: LapData | None,
+        *,
+        n: int,
+    ) -> None:
+        if not self._chk_trackdb_enabled.isChecked():
+            self._delta_scatter.setData([])
+            return
+
+        mode = self._trackdb_color_mode_key()
+        if mode == "off":
+            self._delta_scatter.setData([])
+            return
+        if mode == "time_delta":
+            self._draw_delta(session, last, ref)
+            return
+        self._draw_trackdb_analysis_overlay(last, ref, mode=mode, n=n)
+
+    def _draw_trackdb_analysis_overlay(
+        self,
+        last: LapData | None,
+        ref: LapData | None,
+        *,
+        mode: str,
+        n: int,
+    ) -> None:
+        self._delta_scatter.setData([])
+        aligned = self._aligned_track
+        target = last or ref
+        if aligned is None or target is None:
+            return
+        if not target.points_xz or not target.cum_dist_m:
+            return
+
+        pts = _resample_by_distance(
+            target.points_xz,
+            target.cum_dist_m,
+            n=n,
+        )
+        if not pts:
+            return
+
+        try:
+            metrics = lap_track_metrics(target.points_xz, aligned, n=n)
+        except Exception:
+            return
+
+        if mode == "trackdb_line_error":
+            values = metrics.get("raceline_error_m") or []
+            brushes = [_line_error_brush(float(v)) for v in values]
+        elif mode == "trackdb_margin":
+            left = metrics.get("left_margin_m") or []
+            right = metrics.get("right_margin_m") or []
+            margins = [
+                min(float(l), float(r))
+                for l, r in zip(left, right)
+            ]
+            brushes = [_margin_brush(v) for v in margins]
+        elif mode == "trackdb_off_track":
+            on_track = metrics.get("on_track") or []
+            brushes = [_offtrack_brush(bool(v)) for v in on_track]
+        else:
+            return
+
+        count = min(len(pts), len(brushes))
+        spots = [
+            {"pos": pts[i], "brush": brushes[i]}
+            for i in range(count)
+        ]
+        self._delta_scatter.setData(spots)
+
     def _draw_delta(
         self,
         session: TelemetrySession,
@@ -589,11 +812,15 @@ class TrackMapWidget(QtWidgets.QWidget):
             self._track_raceline,
             self._closed_polyline(aligned.raceline),
         )
+        self._apply_external_overlay_visibility()
 
     def _update_external_metrics(
         self, last: LapData | None, ref: LapData | None, n: int
     ) -> None:
         self._reset_external_metric_values()
+        if not self._chk_trackdb_enabled.isChecked():
+            self._trackdb_status.setText("TrackDB baseline disabled")
+            return
 
         track_key = canonical_track_key(self._track_name)
         if track_key is None:

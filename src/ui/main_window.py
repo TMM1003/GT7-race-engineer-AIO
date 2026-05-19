@@ -114,6 +114,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.graphs = GraphsWidget()
         self.graphs_overlay = GraphsOverlayWidget()
         self.corner_table = CornerTableWidget()
+        self.replay_tab.sig_trackdb_overlay_changed.connect(
+            self.track_map.set_trackdb_overlay_options
+        )
+        self.track_map.set_trackdb_overlay_options(
+            self.replay_tab.current_trackdb_overlay_settings()
+        )
 
         # Standardize dock attribute names
         self.dock_track = self._make_dock("Track Map", self.track_map)
