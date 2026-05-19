@@ -5,6 +5,8 @@ from PySide6 import QtCore, QtWidgets
 from typing import Optional
 import re
 
+from src.track_geometry.tumftm import SUPPORTED_TRACKDB_TRACKS
+
 
 class SettingsTab(QtWidgets.QWidget):
     # Thesis/Research control panel
@@ -185,8 +187,19 @@ class SettingsTab(QtWidgets.QWidget):
         meta_layout.addSpacing(8)
 
         # Editable metadata
-        self.edit_track_name = QtWidgets.QLineEdit()
-        self.edit_track_name.setPlaceholderText("e.g., Monza")
+        self.edit_track_name = QtWidgets.QComboBox()
+        self.edit_track_name.setEditable(True)
+        self.edit_track_name.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.edit_track_name.addItems(SUPPORTED_TRACKDB_TRACKS)
+        self.edit_track_name.setCurrentIndex(-1)
+        self.edit_track_name.setToolTip(
+            "Pick a supported TrackDB circuit or type a custom track label."
+        )
+        track_line_edit = self.edit_track_name.lineEdit()
+        if track_line_edit is not None:
+            track_line_edit.setPlaceholderText(
+                "Pick a TrackDB track or type a custom label"
+            )
         self.edit_car_name = QtWidgets.QLineEdit()
         self.edit_car_name.setPlaceholderText("e.g., Toyota SF '23")
         self.edit_run_alias = QtWidgets.QLineEdit()
@@ -443,9 +456,12 @@ class SettingsTab(QtWidgets.QWidget):
         # tab.
         return
 
+    def _track_name_text(self) -> str:
+        return str(self.edit_track_name.currentText() or "").strip()
+
     def _collect_run_metadata(self) -> dict:
         return {
-            "track_name": self.edit_track_name.text().strip() or None,
+            "track_name": self._track_name_text() or None,
             "car_name": self.edit_car_name.text().strip() or None,
             "run_alias": self.edit_run_alias.text().strip() or None,
             "notes": self.edit_notes.toPlainText().strip() or None,
@@ -458,7 +474,7 @@ class SettingsTab(QtWidgets.QWidget):
         self.sig_start_new_run_with_meta.emit(self._collect_run_metadata())
 
     def _autofill_alias(self) -> None:
-        track = (self.edit_track_name.text() or "").strip()
+        track = self._track_name_text()
         car = (self.edit_car_name.text() or "").strip()
 
         def slug(s: str) -> str:
@@ -561,7 +577,7 @@ class SettingsTab(QtWidgets.QWidget):
         If you already have this method, merge these fields in.
         """
         meta = {
-            "track_name": (self.edit_track_name.text() or "").strip() or None,
+            "track_name": self._track_name_text() or None,
             "car_name": (self.edit_car_name.text() or "").strip() or None,
             "run_alias": (self.edit_run_alias.text() or "").strip() or None,
             "notes": (self.edit_notes.toPlainText() or "").strip() or None,

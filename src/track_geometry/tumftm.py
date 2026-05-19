@@ -18,6 +18,19 @@ RAW_BASE_URL = (
 )
 DEFAULT_CACHE_ROOT = Path("trackdb")
 
+SUPPORTED_TRACKDB_TRACKS = (
+    "Brands Hatch",
+    "Circuit de Barcelona-Catalunya",
+    "Circuit Gilles-Villeneuve",
+    "Autodromo Nazionale Monza",
+    "Nurburgring GP",
+    "Autodromo de Interlagos",
+    "Circuit de Spa-Francorchamps",
+    "Red Bull Ring",
+    "Suzuka Circuit",
+    "Yas Marina Circuit",
+)
+
 _TRACK_ALIASES = {
     "autodromo de interlagos": "SaoPaulo",
     "autodromo jose carlos pace": "SaoPaulo",
