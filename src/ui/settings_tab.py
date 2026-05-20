@@ -5,6 +5,7 @@ from PySide6 import QtCore, QtWidgets
 from typing import Optional
 import re
 
+from src.paths import default_runs_dir
 from src.track_geometry.tumftm import SUPPORTED_TRACKDB_TRACKS
 
 
@@ -22,6 +23,7 @@ class SettingsTab(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._default_output_root = str(default_runs_dir())
 
         root_layout = QtWidgets.QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -54,7 +56,9 @@ class SettingsTab(QtWidgets.QWidget):
 
         # Output root
         out_row = QtWidgets.QHBoxLayout()
-        self.edit_output_root = QtWidgets.QLineEdit("data/runs")
+        self.edit_output_root = QtWidgets.QLineEdit(
+            self._default_output_root
+        )
         self.btn_browse = QtWidgets.QPushButton("Browse…")
         self.btn_browse.clicked.connect(self._browse_output_root)
         out_row.addWidget(self.edit_output_root, 1)
@@ -456,6 +460,11 @@ class SettingsTab(QtWidgets.QWidget):
         # tab.
         return
 
+    def set_output_root(self, output_root: str) -> None:
+        self.edit_output_root.setText(
+            str(output_root or self._default_output_root)
+        )
+
     def _track_name_text(self) -> str:
         return str(self.edit_track_name.currentText() or "").strip()
 
@@ -598,7 +607,7 @@ class SettingsTab(QtWidgets.QWidget):
             self.edit_train_path.text().strip()
             or self._current_run_dir
             or self.edit_output_root.text().strip()
-            or "data/runs"
+            or self._default_output_root
         )
         selected = QtWidgets.QFileDialog.getExistingDirectory(
             self, "Choose run folder", start_dir
@@ -611,7 +620,7 @@ class SettingsTab(QtWidgets.QWidget):
             self.edit_train_path.text().strip()
             or self._current_run_dir
             or self.edit_output_root.text().strip()
-            or "data/runs"
+            or self._default_output_root
         )
         selected, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
@@ -715,7 +724,8 @@ class SettingsTab(QtWidgets.QWidget):
 
         settings = {
             "research_enabled": bool(self.chk_research_enabled.isChecked()),
-            "output_root": self.edit_output_root.text().strip() or "data/runs",
+            "output_root": self.edit_output_root.text().strip()
+            or self._default_output_root,
             "n_bins": int(self.spin_n_bins.value()),
             "features": features,
             "normalize": bool(self.chk_normalize.isChecked()),

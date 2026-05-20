@@ -633,7 +633,7 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser(
         description=(
-            "Build a corner-level dataset from a GT7 Race Engineer "
+            "Build a corner-level dataset from a GT7 Machine Learning Tool "
             "run folder."
         )
     )

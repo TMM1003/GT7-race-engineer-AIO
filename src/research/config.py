@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Optional, Tuple
+from typing import Tuple
+
+from src.paths import default_runs_dir
+
+
+DEFAULT_OUTPUT_ROOT = str(default_runs_dir())
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -35,7 +40,7 @@ def _env_csv_tuple(name: str, default: Tuple[str, ...]) -> Tuple[str, ...]:
 @dataclass(frozen=True)
 class ResearchConfig:
     enabled: bool = True
-    output_root: str = "data/runs"
+    output_root: str = DEFAULT_OUTPUT_ROOT
     n_bins: int = 300
 
     # representation controls
@@ -60,8 +65,10 @@ class ResearchConfig:
 def load_config() -> ResearchConfig:
     return ResearchConfig(
         enabled=_env_bool("RESEARCH_ENABLED", True),
-        output_root=os.getenv("RESEARCH_OUTPUT_ROOT", "data/runs").strip()
-        or "data/runs",
+        output_root=os.getenv(
+            "RESEARCH_OUTPUT_ROOT", DEFAULT_OUTPUT_ROOT
+        ).strip()
+        or DEFAULT_OUTPUT_ROOT,
         n_bins=_env_int("RESEARCH_N_BINS", 300),
         features=_env_csv_tuple(
             "RESEARCH_FEATURES",

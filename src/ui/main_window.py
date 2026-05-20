@@ -14,8 +14,8 @@ from src.ui.telemetry_table import TelemetryTableWidget
 from src.ui.corner_table import CornerTableWidget
 from src.ui.replay_tab import ReplayTab
 from src.ui.settings_tab import SettingsTab
-from pathlib import Path
 from src.gt7db.loader import GT7Database
+from src.paths import resource_path
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -33,7 +33,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("GT7 Race Engineer")
+        self.setWindowTitle("GT7 Machine Learning Tool")
         self.resize(980, 720)
 
         # Dock behavior: tabbed docks, nested docks, animations
@@ -66,7 +66,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._gt7db = None
         try:
-            db_root = Path("src/gt7db")
+            db_root = resource_path("src", "gt7db")
             # expects: gt7_car.csv, gt7_venues.csv, gt7_layouts.csv
             self._gt7db = GT7Database.load(db_root)
             self.settings_tab.set_gt7_database(self._gt7db)

@@ -31,6 +31,7 @@ from src.research.poster_replay import (
 from src.research.train_pipeline import train_and_save_model
 
 from src.gt7db import GT7Database
+from src.paths import default_runs_dir, ensure_user_data_dirs, resource_path
 
 
 def _read_json(path: Path) -> dict:
@@ -176,14 +177,12 @@ class AppController(QtCore.QObject):
         self.session = TelemetrySession(max_samples=36000)
 
         # Research Config
+        ensure_user_data_dirs()
         self.research_cfg = load_config()
         self.run = None
 
         # GT7 reference database (cars / venues / layouts)
-        self.gt7db = GT7Database.load(Path("src/gt7db"))
-        print("[gt7db] cars loaded:", len(self.gt7db.cars))
-        print("[gt7db] venues loaded:", len(self.gt7db.venues))
-        print("[gt7db] layouts loaded:", len(self.gt7db.layouts))
+        self.gt7db = GT7Database.load(resource_path("src", "gt7db"))
 
         # Do not attach lap-finalize callback until research is enabled
         self.session.on_lap_finalized = None
@@ -205,6 +204,12 @@ class AppController(QtCore.QObject):
         self.comm.start()
 
         self.window = MainWindow()
+        try:
+            self.window.settings_tab.set_output_root(
+                self.research_cfg.output_root
+            )
+        except Exception:
+            pass
 
         # Give SettingsTab access to gt7db
         try:
@@ -660,7 +665,7 @@ class AppController(QtCore.QObject):
         self.research_cfg = replace(
             self.research_cfg,
             enabled=enabled,
-            output_root=str(s.get("output_root") or "data/runs"),
+            output_root=str(s.get("output_root") or default_runs_dir()),
             n_bins=int(s.get("n_bins", 300)),
             export_npz_if_available=bool(
                 s.get("export_npz_if_available", True)

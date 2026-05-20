@@ -1,0 +1,114 @@
+GT7 Machine Learning Tool Research Use License v1.0
+
+Copyright (c) 2026 Thomas M. (TMM1003)
+All rights reserved.
+
+This license is not an open-source license. It grants limited permission to
+use GT7 Machine Learning Tool under the terms below. Any rights not expressly
+granted are reserved by the copyright holder.
+
+1. Definitions
+
+"Software" means GT7 Machine Learning Tool, including its source code,
+compiled releases, documentation, scripts, packaging files, and related
+project materials, except for third-party components governed by their own
+licenses.
+
+"Official Release" means a compiled release asset published by the copyright
+holder from the official project repository or another channel controlled by
+the copyright holder.
+
+"Non-commercial use" means use that is not primarily intended for commercial
+advantage, paid services, resale, sublicensing, productization, or revenue
+generation.
+
+2. Permitted Uses
+
+You may:
+
+- Download, install, and use Official Releases for personal, academic,
+  educational, and non-commercial research purposes.
+- Use the Software to collect, inspect, analyze, and export Gran Turismo 7
+  telemetry data for non-commercial research.
+- View the source code for transparency, learning, review, and personal
+  non-commercial study.
+- Make private modifications for your own personal, academic, educational, or
+  non-commercial research use.
+- Share telemetry data that you personally collected, provided doing so does
+  not violate any third-party terms that apply to you.
+
+3. Restrictions
+
+You may not, without prior written permission from the copyright holder:
+
+- Sell, rent, lease, sublicense, host, or commercially exploit the Software.
+- Use the Software, modified versions, or derived works for commercial
+  products, paid services, consulting deliverables, or revenue-generating
+  workflows.
+- Redistribute modified versions, modified source code, repackaged builds, or
+  derivative works.
+- Remove or obscure copyright notices, license notices, attribution, or
+  third-party notices.
+- Represent the Software as your own project or imply endorsement by the
+  copyright holder.
+- Use the project name, branding, or repository identity to distribute an
+  unofficial build in a way that could confuse users about its source.
+
+Public repository features provided by GitHub, such as viewing and forking the
+repository, are subject to GitHub's Terms of Service. This license does not
+grant additional rights to redistribute, sublicense, or commercially exploit
+the Software.
+
+4. Third-Party Components
+
+The Software may include or depend on third-party components, libraries, and
+data. Those components remain governed by their own license terms. This
+license does not modify, replace, or limit any third-party license terms.
+
+The bundled track geometry data under `trackdb/` is derived from
+TUMFTM/racetrack-database and remains subject to its upstream LGPL-3.0
+license and attribution requirements. See `trackdb/ATTRIBUTION.md` and
+`trackdb/LICENSE`.
+
+5. Telemetry Data
+
+You retain ownership of telemetry data that you collect with the Software,
+subject to any third-party terms that may apply to the game, platform, or
+network services you use. If you voluntarily send telemetry data to the
+project owner, you grant permission to use that submitted data for academic,
+research, analysis, model-development, validation, and thesis-related
+purposes.
+
+6. No Affiliation
+
+GT7 Machine Learning Tool is an independent research tool. It is not
+affiliated with, endorsed by, sponsored by, or approved by Sony Interactive
+Entertainment, Polyphony Digital, or the Gran Turismo franchise. Gran Turismo
+and related names are trademarks of their respective owners.
+
+7. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT,
+ACCURACY, RELIABILITY, OR AVAILABILITY.
+
+8. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER SHALL NOT BE
+LIABLE FOR ANY CLAIM, DAMAGES, LOSSES, OR OTHER LIABILITY ARISING FROM OR
+RELATED TO THE SOFTWARE, INCLUDING BUT NOT LIMITED TO DATA LOSS, NETWORK
+ISSUES, PLATFORM ACCOUNT ISSUES, SECURITY SOFTWARE WARNINGS, LOST PROFITS,
+BUSINESS INTERRUPTION, OR THE USE OR INABILITY TO USE THE SOFTWARE.
+
+9. Termination
+
+Your permission to use the Software terminates automatically if you violate
+this license. Upon termination, you must stop using the Software and delete any
+copies in your possession, except where retention is required by law.
+
+10. Permission Requests
+
+For commercial use, redistribution, modified public builds, sublicensing, or
+other uses not permitted by this license, contact the copyright holder for
+written permission.

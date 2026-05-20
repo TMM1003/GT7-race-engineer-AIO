@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Iterable
 from urllib.request import urlopen
 
+from src.paths import resource_path
+
 from .alignment import Point2, TrackGeometry
 
 
@@ -16,7 +18,7 @@ RAW_BASE_URL = (
     "https://raw.githubusercontent.com/TUMFTM/"
     "racetrack-database/master"
 )
-DEFAULT_CACHE_ROOT = Path("trackdb")
+DEFAULT_CACHE_ROOT = resource_path("trackdb")
 
 SUPPORTED_TRACKDB_TRACKS = (
     "Brands Hatch",
@@ -171,7 +173,7 @@ def load_tumftm_track(
             "TUMFTM track CSVs are not cached. Run "
             "`python scripts/align_trackdb_to_gt7.py --cache-only` "
             "or call with allow_download=True. The default cache root is "
-            "`trackdb`."
+            f"`{cache_root}`."
         )
 
     track_rows = _read_numeric_csv(track_path)

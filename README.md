@@ -1,6 +1,6 @@
-# GT7 Race Engineer (Telemetry & Research Platform)
+# GT7 Machine Learning Tool (Telemetry & Research Platform)
 
-GT7 Race Engineer is a real-time telemetry analysis and research platform for *Gran Turismo 7*.  
+GT7 Machine Learning Tool is a real-time telemetry analysis and research platform for *Gran Turismo 7*.
 It combines live telemetry capture, deterministic lap and corner analysis, and reproducible dataset generation to support both **driver performance analysis** and **machine learning research**.
 
 The project is developed alongside an academic thesis focused on **corner-level performance loss analysis using telemetry-derived features**, with an emphasis on interpretability and reproducibility.
@@ -296,12 +296,67 @@ pip install -r requirements.txt
 
 ---
 
+## Windows Installer
+
+Build the bundled executable:
+
+```bat
+package.bat
+```
+
+Build the friend-facing installer:
+
+```bat
+build_installer.bat
+```
+
+The installer is written to:
+
+```text
+dist-installer\GT7-Machine-Learning-Tool-Setup.exe
+```
+
+Installed runs are stored by default in:
+
+```text
+Documents\GT7 Machine Learning Tool\data\runs
+```
+
+Friends should send the full `runs` folder or the specific timestamped run
+folder from that location. The installed app also includes
+`Data Collection Guide.md` with setup, firewall, and upload notes.
+
+If Inno Setup is not installed yet, you can still create a zip-based friend
+package:
+
+```bat
+build_friend_package.bat
+```
+
+That writes:
+
+```text
+dist-installer\GT7-Machine-Learning-Tool-Install.zip
+```
+
+Friends can unzip it and run `install.bat`.
+
+---
+
 ## License
 
-This project is currently intended for academic and research use.  
-Licensing will be finalized following thesis submission.
+GT7 Machine Learning Tool is released under a custom source-available,
+non-commercial research-use license. See [LICENSE](LICENSE).
+
+In short: official releases may be used for personal, academic, educational,
+and non-commercial telemetry collection and research. Commercial use,
+redistribution of modified builds, sublicensing, resale, and rebranding are
+not permitted without written permission.
 
 The bundled `trackdb/` data is derived from
 [`TUMFTM/racetrack-database`](https://github.com/TUMFTM/racetrack-database)
 and remains subject to its upstream LGPL-3.0 license. See
 `trackdb/ATTRIBUTION.md` and `trackdb/LICENSE`.
+
+Additional dependency and trademark notes are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

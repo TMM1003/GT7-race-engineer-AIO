@@ -11,12 +11,18 @@ coverage.xml
 htmlcov/
 .ipynb_checkpoints/
 
-# Build / packaging outputs
+# Build / packaging outputs and release assets
 dist/
 build/
+dist-installer/
 *.spec
+!gt7-machine-learning-tool.spec
 *.exe
 *.msi
+*.zip
+*.7z
+*.tar
+*.tar.gz
 *.whl
 *.egg-info/
 packaging/

@@ -9,6 +9,7 @@ from src.ui.graph_colors import (
     DEFAULT_GRAPH_COLOR_SETTINGS,
     normalized_graph_color_settings,
 )
+from src.paths import default_runs_dir
 
 
 class ReplayTab(QtWidgets.QWidget):
@@ -28,6 +29,7 @@ class ReplayTab(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._default_runs_dir = str(default_runs_dir())
 
         self._current_run_id: Optional[str] = None
         self._current_run_dir: Optional[str] = None
@@ -474,7 +476,7 @@ class ReplayTab(QtWidgets.QWidget):
         start_dir = (
             self.edit_replay_path.text().strip()
             or self._current_run_dir
-            or "data/runs"
+            or self._default_runs_dir
         )
         selected = QtWidgets.QFileDialog.getExistingDirectory(
             self, "Choose replay run folder", start_dir
