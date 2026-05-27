@@ -15,7 +15,7 @@ New-Item -ItemType Directory -Force -Path $RunsDir | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $SourceRoot $AppExe) -Destination $AppDir -Force
 Copy-Item -LiteralPath (Join-Path $SourceRoot "README.md") -Destination $AppDir -Force
-Copy-Item -LiteralPath (Join-Path $SourceRoot "Data Collection Guide.md") -Destination $AppDir -Force
+Copy-Item -LiteralPath (Join-Path $SourceRoot "Participant_Guide.md") -Destination $AppDir -Force
 
 function New-AppShortcut {
     param(

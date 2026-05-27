@@ -324,7 +324,8 @@ Documents\GT7 Machine Learning Tool\data\runs
 
 Friends should send the full `runs` folder or the specific timestamped run
 folder from that location. The installed app also includes
-`Data Collection Guide.md` with setup, firewall, and upload notes.
+`Participant_Guide.md` with study information, setup,
+firewall, and upload notes.
 
 If Inno Setup is not installed yet, you can still create a zip-based friend
 package:

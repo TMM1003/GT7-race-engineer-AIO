@@ -1,6 +1,12 @@
-# GT7 Machine Learning Tool Data Collection Guide
+# Participant Telemetry Collection Guide
 
-Use this guide when collecting Gran Turismo 7 telemetry runs for Thomas.
+
+## Study Information
+
+This data collection is part of my thesis research project. The purpose of the study is to collect Gran Turismo 7 telemetry data for machine learning analysis of driving performance under controlled simulator conditions. Participation is entirely voluntary. You may decline to participate or stop at any time before sending your data. Participation involves using the GT7 Machine Learning Tool to record telemetry from your own driving session while following the specified study conditions. No direct identifying information is requested as part of the retained research dataset, and you should not include your name or other personal information in exported files. The telemetry data you submit will be used for dataset construction, model training, and thesis analysis.
+
+
+## Participant Instructions
 
 ## Before Driving
 
@@ -40,7 +46,7 @@ baselines\
 models\
 ```
 
-## What To Send
+## Submission Instructions
 
 Send either:
 

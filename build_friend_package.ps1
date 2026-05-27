@@ -31,8 +31,8 @@ Copy-Item -LiteralPath (Join-Path $Root "LICENSE") -Destination $Stage -Force
 Copy-Item -LiteralPath (Join-Path $Root "THIRD_PARTY_NOTICES.md") `
     -Destination $Stage `
     -Force
-Copy-Item -LiteralPath (Join-Path $Root "docs\Friend_Data_Collection.md") `
-    -Destination (Join-Path $Stage "Data Collection Guide.md") `
+Copy-Item -LiteralPath (Join-Path $Root "docs\Participant_Guide.md") `
+    -Destination (Join-Path $Stage "Participant_Guide.md") `
     -Force
 Copy-Item -LiteralPath (Join-Path $Root "installer\manual-install\install.bat") `
     -Destination $Stage `

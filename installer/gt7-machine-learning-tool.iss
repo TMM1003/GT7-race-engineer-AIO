@@ -30,7 +30,7 @@ Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\docs\Friend_Data_Collection.md"; DestDir: "{app}"; DestName: "Data Collection Guide.md"; Flags: ignoreversion
+Source: "..\docs\Participant_Guide.md"; DestDir: "{app}"; DestName: "Participant_Guide.md"; Flags: ignoreversion
 
 [Dirs]
 Name: "{userdocs}\{#MyAppName}"
@@ -39,7 +39,7 @@ Name: "{userdocs}\{#MyAppName}\data\runs"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{userdocs}\{#MyAppName}"
-Name: "{autoprograms}\Data Collection Guide"; Filename: "{app}\Data Collection Guide.md"
+Name: "{autoprograms}\Participant Guide"; Filename: "{app}\Participant_Guide.md"
 Name: "{autoprograms}\Open Collected Runs Folder"; Filename: "{userdocs}\{#MyAppName}\data\runs"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{userdocs}\{#MyAppName}"; Tasks: desktopicon
 
