@@ -14,9 +14,9 @@ if (-not $SkipPyInstaller) {
     }
 }
 
-$AppExe = Join-Path $Root "dist\GT7-Machine-Learning-Tool.exe"
+$AppExe = Join-Path $Root "dist\GT7-Machine-Learning-Tool\GT7-Machine-Learning-Tool.exe"
 if (-not (Test-Path -LiteralPath $AppExe)) {
-    throw "Expected packaged executable was not found: $AppExe"
+    throw "Expected packaged application executable was not found: $AppExe"
 }
 
 $IsccCandidates = @()

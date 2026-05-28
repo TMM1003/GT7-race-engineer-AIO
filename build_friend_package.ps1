@@ -6,10 +6,10 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OutputRoot = Join-Path $Root "dist-installer"
 $Stage = Join-Path $OutputRoot "GT7-Machine-Learning-Tool-Install"
 $ZipPath = Join-Path $OutputRoot "GT7-Machine-Learning-Tool-Install.zip"
-$AppExe = Join-Path $Root "dist\GT7-Machine-Learning-Tool.exe"
+$AppDir = Join-Path $Root "dist\GT7-Machine-Learning-Tool"
 
-if (-not (Test-Path -LiteralPath $AppExe)) {
-    throw "Expected packaged executable was not found: $AppExe"
+if (-not (Test-Path -LiteralPath $AppDir)) {
+    throw "Expected packaged application directory was not found: $AppDir"
 }
 
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
@@ -25,7 +25,7 @@ if (Test-Path -LiteralPath $Stage) {
 
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
-Copy-Item -LiteralPath $AppExe -Destination $Stage -Force
+Copy-Item -LiteralPath $AppDir -Destination $Stage -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $Root "README.md") -Destination $Stage -Force
 Copy-Item -LiteralPath (Join-Path $Root "LICENSE") -Destination $Stage -Force
 Copy-Item -LiteralPath (Join-Path $Root "THIRD_PARTY_NOTICES.md") `
